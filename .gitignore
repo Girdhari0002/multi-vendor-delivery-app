@@ -16,5 +16,3 @@ server/.env
 .env.test.local
 .env.production.local
 
-# Prompted.md
-Prompted.md
