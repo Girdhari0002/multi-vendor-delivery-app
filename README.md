@@ -26,4 +26,4 @@ The backend API server will start on `http://localhost:5000`.
 cd client
 npm run dev
 ```
-The React frontend will be available at `http://localhost:5173`.
+The React frontend will be available at `http://localhost:5173`
