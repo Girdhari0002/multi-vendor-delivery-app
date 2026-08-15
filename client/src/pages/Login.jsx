@@ -16,9 +16,12 @@ const Login = () => {
       toast.success('Login successful!');
       if (user.role === 'admin') navigate('/admin/dashboard');
       else if (user.role === 'seller') navigate('/seller/dashboard');
+      else if (user.role === 'delivery') navigate('/delivery/dashboard');
       else navigate('/');
     } catch (error) {
-      // Error is handled in context
+      if (error.response?.data?.needsVerification) {
+        navigate('/verify-otp', { state: { email: error.response.data.email } });
+      }
     }
   };
 
@@ -60,9 +63,12 @@ const Login = () => {
             </button>
           </div>
         </form>
-        <div className="text-center mt-4">
-          <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
+        <div className="text-center mt-4 space-y-2">
+          <Link to="/register" className="block font-medium text-blue-600 hover:text-blue-500">
             Don't have an account? Register
+          </Link>
+          <Link to="/forgot-password" className="block font-medium text-gray-500 hover:text-gray-700 text-sm">
+            Forgot your password?
           </Link>
         </div>
       </div>

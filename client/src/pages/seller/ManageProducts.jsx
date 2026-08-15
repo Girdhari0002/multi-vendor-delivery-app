@@ -12,9 +12,9 @@ const ManageProducts = () => {
 
   const fetchProducts = async () => {
     try {
-      const { data } = await api.get('/products');
+      const { data } = await api.get('/products', { params: { limit: 1000 } });
       // Filter out products that don't belong to this seller
-      setProducts(data.filter(p => p.sellerId?._id === user._id || p.sellerId === user._id));
+      setProducts((data.products || []).filter(p => p.sellerId?._id === user._id || p.sellerId === user._id));
     } catch (error) {
       toast.error('Failed to load products');
     } finally {

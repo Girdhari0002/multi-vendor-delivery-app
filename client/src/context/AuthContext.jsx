@@ -32,12 +32,34 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (name, email, password, role) => {
     try {
+      // Registration no longer logs the user in — the account stays unverified until
+      // they enter the OTP emailed to them (see verifyOtp below).
       const { data } = await api.post('/auth/register', { name, email, password, role });
+      return data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Registration failed');
+      throw error;
+    }
+  };
+
+  const verifyOtp = async (email, otp) => {
+    try {
+      const { data } = await api.post('/auth/verify-otp', { email, otp });
       setUser(data);
       localStorage.setItem('userInfo', JSON.stringify(data));
       return data;
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      toast.error(error.response?.data?.message || 'Verification failed');
+      throw error;
+    }
+  };
+
+  const resendOtp = async (email) => {
+    try {
+      const { data } = await api.post('/auth/resend-otp', { email });
+      return data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to resend code');
       throw error;
     }
   };
@@ -49,8 +71,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
-      {!loading && children}
+    <AuthContext.Provider value={{ user, loading, login, register, verifyOtp, resendOtp, logout }}>
+      {children}
     </AuthContext.Provider>
   );
 };

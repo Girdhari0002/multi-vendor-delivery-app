@@ -2,11 +2,11 @@ import Product from '../models/Product.js';
 import { uploadImage } from '../services/imagekit.js';
 
 
-// GET /api/products (with search and filter)
+// GET /api/products (with search, filter, sort and pagination)
 export const getProducts = async (req, res) => {
   try {
-    const { keyword, category, minPrice, maxPrice } = req.query;
-    
+    const { keyword, category, minPrice, maxPrice, page, limit, sort } = req.query;
+
     let query = {};
     if (keyword) {
       query.title = { $regex: keyword, $options: 'i' };
@@ -14,14 +14,33 @@ export const getProducts = async (req, res) => {
     if (category) {
       query.category = category;
     }
-    if (minPrice || maxPrice) {
+    if (minPrice !== undefined || maxPrice !== undefined) {
       query.price = {};
-      if (minPrice) query.price.$gte = Number(minPrice);
-      if (maxPrice) query.price.$lte = Number(maxPrice);
+      if (minPrice !== undefined) query.price.$gte = minPrice;
+      if (maxPrice !== undefined) query.price.$lte = maxPrice;
     }
 
-    const products = await Product.find(query).populate('sellerId', 'name');
-    res.json(products);
+    const sortMap = {
+      newest: { createdAt: -1 },
+      price_asc: { price: 1 },
+      price_desc: { price: -1 },
+      rating: { rating: -1 },
+    };
+    const sortOption = sortMap[sort] || sortMap.newest;
+
+    const total = await Product.countDocuments(query);
+    const products = await Product.find(query)
+      .populate('sellerId', 'name')
+      .sort(sortOption)
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    res.json({
+      products,
+      page,
+      pages: Math.max(Math.ceil(total / limit), 1),
+      total,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

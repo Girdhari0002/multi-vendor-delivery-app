@@ -16,3 +16,11 @@ server/.env
 .env.test.local
 .env.production.local
 
+# Logs
+*.log
+npm-debug.log*
+server/logs/
+
+# Root (no root-level package installs in this project)
+/node_modules/
+

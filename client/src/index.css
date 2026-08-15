@@ -1,9 +1,115 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+  * {
+    @apply font-sans;
   }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased leading-relaxed;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1 {
+    @apply text-2xl font-bold text-amazon-dark;
+  }
+
+  h2 {
+    @apply text-xl font-bold text-amazon-dark;
+  }
+
+  h3 {
+    @apply text-lg font-semibold text-amazon-dark;
+  }
+
+  p {
+    @apply text-gray-700 leading-relaxed;
+  }
+
+  a {
+    @apply transition-colors duration-150;
+  }
+
+  button {
+    @apply transition-all duration-200 focus:outline-none;
+  }
+
+  input,
+  textarea,
+  select {
+    @apply rounded border border-gray-300 focus:border-amazon-orange focus:ring-1 focus:ring-amazon-orange;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-amazon-orange text-white px-4 py-2 rounded-md font-medium hover:bg-yellow-600 transition-colors duration-150;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300 transition-colors duration-150;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white px-4 py-2 rounded-md font-medium hover:bg-red-700 transition-colors duration-150;
+  }
+
+  .card {
+    @apply bg-white rounded-lg shadow-md border border-gray-200 p-6;
+  }
+
+  .card-hover {
+    @apply bg-white rounded-lg shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow duration-150;
+  }
+
+  .badge {
+    @apply inline-block px-3 py-1 rounded-full text-sm font-medium;
+  }
+
+  .badge-orange {
+    @apply bg-orange-100 text-amazon-orange;
+  }
+
+  .badge-green {
+    @apply bg-green-100 text-green-700;
+  }
+
+  .badge-red {
+    @apply bg-red-100 text-red-700;
+  }
+
+  .input-focus {
+    @apply border-amazon-orange ring-1 ring-orange-200;
+  }
+
+  .table-header {
+    @apply bg-gray-100 text-amazon-dark font-semibold;
+  }
+}
+
+/* Utility Classes */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ff9900;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ffb84d;
 }

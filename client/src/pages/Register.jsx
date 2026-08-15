@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 
 const Register = () => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'customer' });
+  const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -12,14 +13,16 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
+    setLoading(true);
     try {
-      const user = await register(formData.name, formData.email, formData.password, formData.role);
-      toast.success('Registration successful!');
-      if (user.role === 'admin') navigate('/admin/dashboard');
-      else if (user.role === 'seller') navigate('/seller/dashboard');
-      else navigate('/');
+      const data = await register(formData.name, formData.email, formData.password, formData.role);
+      toast.success('Registration successful! Check your email for a verification code.');
+      navigate('/verify-otp', { state: { email: data.email } });
     } catch (error) {
       // Error logic in context
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -63,15 +66,15 @@ const Register = () => {
             >
               <option value="customer">Customer</option>
               <option value="seller">Seller</option>
-              <option value="admin">Admin</option>
             </select>
           </div>
           <div>
             <button
               type="submit"
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
             >
-              Register
+              {loading ? 'Registering...' : 'Register'}
             </button>
           </div>
         </form>

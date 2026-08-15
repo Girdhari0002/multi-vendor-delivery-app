@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_SERVER_API,
+  withCredentials: true,
 });
 
 // Add a request interceptor to inject the token

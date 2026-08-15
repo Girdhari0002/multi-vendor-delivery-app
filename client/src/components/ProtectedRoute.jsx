@@ -19,6 +19,8 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
         return <Navigate to="/seller/dashboard" />;
       case 'admin':
         return <Navigate to="/admin/dashboard" />;
+      case 'delivery':
+        return <Navigate to="/delivery/dashboard" />;
       default:
         return <Navigate to="/" />;
     }

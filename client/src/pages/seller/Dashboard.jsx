@@ -9,20 +9,15 @@ const SellerDashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { data: prods } = await api.get('/products'); // We will filter by sellerId or make a special route
-        // Wait, for quickness, we'll fetch /orders/seller to get total rev + orders
+        const { data: prods } = await api.get('/products', { params: { limit: 1000 } });
         const { data: ords } = await api.get('/orders/seller');
-        
+
         let rev = 0;
         ords.forEach(o => {
-          // rough estimation: seller gets totalAmount (if all items are theirs)
-          // to be exact, need items filtering
-          rev += o.totalAmount;
+          rev += o.totalPrice || o.totalAmount || 0;
         });
 
-        // The products API does not have seller-only filter by default unless passed query. Let's just mock total products for now.
-        
-        setStats({ products: prods.length, orders: ords.length, revenue: rev });
+        setStats({ products: prods.products?.length || 0, orders: ords.length, revenue: rev });
       } catch (error) {
         console.error(error);
       } finally {
@@ -36,19 +31,19 @@ const SellerDashboard = () => {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Seller Dashboard</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white shadow rounded-lg p-6 border-l-4 border-blue-500">
-          <h3 className="text-gray-500 text-sm font-semibold uppercase">Total Products (est)</h3>
-          <p className="text-3xl font-bold mt-2">{stats.products}</p>
+      <h2 className="text-lg sm:text-xl md:text-2xl font-bold mb-4 md:mb-6">Seller Dashboard</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 lg:gap-6">
+        <div className="bg-white shadow rounded-lg p-3 md:p-6 border-l-4 border-blue-500 hover:shadow-lg transition">
+          <h3 className="text-gray-500 text-xs md:text-sm font-semibold uppercase">Total Products (est)</h3>
+          <p className="text-2xl md:text-3xl font-bold mt-2 text-gray-900">{stats.products}</p>
         </div>
-        <div className="bg-white shadow rounded-lg p-6 border-l-4 border-green-500">
-          <h3 className="text-gray-500 text-sm font-semibold uppercase">Total Orders</h3>
-          <p className="text-3xl font-bold mt-2">{stats.orders}</p>
+        <div className="bg-white shadow rounded-lg p-3 md:p-6 border-l-4 border-green-500 hover:shadow-lg transition">
+          <h3 className="text-gray-500 text-xs md:text-sm font-semibold uppercase">Total Orders</h3>
+          <p className="text-2xl md:text-3xl font-bold mt-2 text-gray-900">{stats.orders}</p>
         </div>
-        <div className="bg-white shadow rounded-lg p-6 border-l-4 border-purple-500">
-          <h3 className="text-gray-500 text-sm font-semibold uppercase">Total Revenue</h3>
-          <p className="text-3xl font-bold mt-2">₹{stats.revenue.toFixed(2)}</p>
+        <div className="bg-white shadow rounded-lg p-3 md:p-6 border-l-4 border-purple-500 hover:shadow-lg transition">
+          <h3 className="text-gray-500 text-xs md:text-sm font-semibold uppercase">Total Revenue</h3>
+          <p className="text-2xl md:text-3xl font-bold mt-2 text-gray-900">₹{stats.revenue.toFixed(2)}</p>
         </div>
       </div>
     </div>

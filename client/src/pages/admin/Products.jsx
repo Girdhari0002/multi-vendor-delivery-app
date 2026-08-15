@@ -9,8 +9,8 @@ const AdminProducts = () => {
 
   const fetchProducts = async () => {
     try {
-      const { data } = await api.get('/products');
-      setProducts(data);
+      const { data } = await api.get('/products', { params: { limit: 1000 } });
+      setProducts(data.products || []);
     } catch (error) {
       toast.error('Failed to load products');
     } finally {

@@ -3,7 +3,8 @@ import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 import Spinner from '../../components/Spinner';
-import { io } from 'socket.io-client';
+import { getSocket } from '../../api/socket';
+import LiveTrackingMap from '../../components/LiveTrackingMap';
 
 const TrackingUI = ({ order }) => {
   const status = order.orderStatus;
@@ -73,18 +74,31 @@ const Orders = () => {
     };
     fetchOrders();
 
-    // Socket Setup
-    const socket = io('http://localhost:5000');
-    if (user?._id) {
-      socket.emit('join_room', user._id.toString());
-    }
+    // Socket.io Setup for Real-Time Order Updates
+    const socket = getSocket();
 
-    socket.on('orderStatusUpdated', (data) => {
-      toast.info(`Order #${data.orderId} is now ${data.status}`);
-      setOrders(prev => prev.map(o => o._id === data.orderId ? { ...o, orderStatus: data.status } : o));
-    });
+    const handleConnect = () => {
+      if (user?._id) {
+        socket.emit('join_room', user._id.toString());
+      }
+    };
+    const handleStatusUpdate = (data) => {
+      toast.info(`Order #${data.orderId.slice(-6)} is now ${data.status}`);
+      setOrders(prev =>
+        prev.map(o =>
+          o._id === data.orderId ? { ...o, orderStatus: data.status } : o
+        )
+      );
+    };
 
-    return () => socket.disconnect();
+    socket.on('connect', handleConnect);
+    socket.on('orderStatusUpdated', handleStatusUpdate);
+    if (socket.connected) handleConnect();
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('orderStatusUpdated', handleStatusUpdate);
+    };
   }, [user]);
 
   if (loading) return <Spinner />;
@@ -109,7 +123,7 @@ const Orders = () => {
                       </div>
                     ))}
                   </div>
-                  <p className="font-bold text-lg text-blue-600">Total: ₹{order.totalAmount}</p>
+                  <p className="font-bold text-lg text-blue-600">Total: ₹{order.totalPrice || order.totalAmount || 0}</p>
                   <p className="text-sm mt-2"><span className="font-semibold text-gray-600">Delivering to:</span> {order.deliveryAddress}</p>
                 </div>
                 <div className="mt-4 md:mt-0 flex flex-col justify-between items-end">
@@ -124,6 +138,13 @@ const Orders = () => {
                 <div className="mt-6 border-t pt-4">
                   <h4 className="text-sm font-semibold text-gray-600 mb-2">Delivery Status</h4>
                   <TrackingUI order={order} />
+                </div>
+              )}
+
+              {order.orderStatus === 'shipped' && order.deliveryAgentId && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-semibold text-gray-600 mb-2">Live Location</h4>
+                  <LiveTrackingMap orderId={order._id} initialLocation={order.currentLocation} />
                 </div>
               )}
             </div>
