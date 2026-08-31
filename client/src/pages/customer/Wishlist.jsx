@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { FaHeart } from 'react-icons/fa';
+import { FaHeartBroken, FaHeart, FaShoppingCart } from 'react-icons/fa';
 import api from '../../api/axios';
-import Spinner from '../../components/Spinner';
+import Card from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
+import EmptyState from '../../components/ui/EmptyState';
+import { useCart } from '../../context/CartContext';
 
 const Wishlist = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { addToCart } = useCart();
 
   const fetchWishlist = async () => {
     try {
@@ -28,43 +32,86 @@ const Wishlist = () => {
     try {
       await api.delete(`/users/wishlist/${productId}`);
       setProducts((prev) => prev.filter((p) => p._id !== productId));
+      toast.success('Removed from wishlist');
     } catch (error) {
       toast.error('Failed to remove item');
     }
   };
 
-  if (loading) return <Spinner />;
+  const handleAddToCart = async (product) => {
+    await addToCart(product._id, 1);
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="h-8 bg-slate-200 rounded w-48 mb-8 animate-pulse"></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-80 bg-slate-200 rounded-xl animate-pulse"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-white shadow rounded-lg p-4 md:p-6">
-      <h2 className="text-2xl font-bold mb-6">My Wishlist</h2>
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl md:text-3xl font-bold text-slate-900">
+          My Wishlist <span className="text-slate-500 text-lg font-normal ml-2">({products.length})</span>
+        </h1>
+      </div>
+
       {products.length === 0 ? (
-        <p className="text-gray-500">Your wishlist is empty. Tap the heart icon on any product to save it here.</p>
+        <EmptyState
+          icon={FaHeart}
+          title="Your wishlist is empty"
+          description="Save items you love here and purchase them later when you're ready."
+          actionLabel="Browse Products"
+          onAction={() => window.location.href = '/'}
+        />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {products.map((product) => (
-            <div key={product._id} className="border rounded-lg overflow-hidden hover:shadow-md transition relative">
-              <button
-                onClick={() => remove(product._id)}
-                className="absolute top-2 right-2 z-10 bg-white/90 rounded-full p-2 shadow hover:scale-110 transition"
-                title="Remove from wishlist"
-              >
-                <FaHeart className="text-red-500" />
-              </button>
-              <div className="bg-gray-100 h-40 flex items-center justify-center">
-                <img src={product.image} alt={product.title} className="w-full h-full object-contain p-2" />
-              </div>
-              <div className="p-3">
-                <h3 className="text-sm font-semibold text-gray-800 truncate">{product.title}</h3>
-                <p className="text-blue-600 font-bold mt-1">₹{product.price?.toFixed(2)}</p>
-                <Link
-                  to={`/product/${product._id}`}
-                  className="mt-2 block text-center bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-2 px-3 rounded text-xs transition-colors"
+            <Card key={product._id} hover padding="none" className="flex flex-col group overflow-hidden">
+              <div className="relative aspect-square bg-slate-50 flex items-center justify-center p-4">
+                <img 
+                  src={product.image || 'https://via.placeholder.com/200'} 
+                  alt={product.title} 
+                  className="w-full h-full object-contain mix-blend-multiply group-hover:scale-105 transition-transform duration-300" 
+                />
+                <button
+                  onClick={() => remove(product._id)}
+                  className="absolute top-3 right-3 bg-white p-2 rounded-full shadow-sm text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors z-10"
+                  title="Remove from wishlist"
                 >
-                  View Details
-                </Link>
+                  <FaHeartBroken size={18} />
+                </button>
               </div>
-            </div>
+              
+              <div className="p-4 flex flex-col flex-1">
+                <Link to={`/product/${product._id}`} className="mb-2 hover:text-orange-500 transition-colors">
+                  <h3 className="text-slate-800 font-medium line-clamp-2 min-h-[2.5rem]">
+                    {product.title}
+                  </h3>
+                </Link>
+                
+                <div className="mt-auto pt-4 space-y-4">
+                  <div className="font-bold text-lg text-slate-900">
+                    ₹{product.price?.toFixed(2)}
+                  </div>
+                  
+                  <Button 
+                    fullWidth 
+                    icon={<FaShoppingCart />}
+                    onClick={() => handleAddToCart(product)}
+                  >
+                    Add to Cart
+                  </Button>
+                </div>
+              </div>
+            </Card>
           ))}
         </div>
       )}

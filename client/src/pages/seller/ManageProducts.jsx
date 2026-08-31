@@ -1,19 +1,53 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
-import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
-import Spinner from '../../components/Spinner';
+import Card from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
+import Input from '../../components/ui/Input';
+import Select from '../../components/ui/Select';
+import Badge from '../../components/ui/Badge';
+import EmptyState from '../../components/ui/EmptyState';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { SkeletonCard } from '../../components/ui/Skeleton';
+import { FaPlus, FaSearch, FaEdit, FaTrash, FaStar, FaBoxOpen } from 'react-icons/fa';
+
+const CATEGORIES = [
+  { value: 'all', label: 'All Categories' },
+  { value: 'electronics', label: 'Electronics' },
+  { value: 'clothing', label: 'Clothing' },
+  { value: 'food', label: 'Food' },
+  { value: 'books', label: 'Books' },
+  { value: 'home', label: 'Home' },
+  { value: 'beauty', label: 'Beauty' },
+  { value: 'sports', label: 'Sports' },
+  { value: 'toys', label: 'Toys' },
+  { value: 'other', label: 'Other' }
+];
+
+const STOCK_STATUS = [
+  { value: 'all', label: 'All Status' },
+  { value: 'in_stock', label: 'In Stock' },
+  { value: 'out_of_stock', label: 'Out of Stock' }
+];
 
 const ManageProducts = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [stockFilter, setStockFilter] = useState('all');
+  
+  const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, productId: null });
+  const [deleting, setDeleting] = useState(false);
 
   const fetchProducts = async () => {
     try {
       const { data } = await api.get('/products', { params: { limit: 1000 } });
-      // Filter out products that don't belong to this seller
       setProducts((data.products || []).filter(p => p.sellerId?._id === user._id || p.sellerId === user._id));
     } catch (error) {
       toast.error('Failed to load products');
@@ -26,61 +60,153 @@ const ManageProducts = () => {
     if (user) fetchProducts();
   }, [user]);
 
-  const deleteProduct = async (id) => {
-    if (window.confirm('Delete this product?')) {
-      try {
-        await api.delete(`/products/${id}`);
-        toast.success('Product deleted');
-        fetchProducts();
-      } catch (error) {
-        toast.error('Failed to delete product');
-      }
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/products/${deleteDialog.productId}`);
+      toast.success('Product deleted successfully');
+      setProducts(prev => prev.filter(p => p._id !== deleteDialog.productId));
+      setDeleteDialog({ isOpen: false, productId: null });
+    } catch (error) {
+      toast.error('Failed to delete product');
+    } finally {
+      setDeleting(false);
     }
   };
 
-  if (loading) return <Spinner />;
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+      const matchesSearch = p.title.toLowerCase().includes(search.toLowerCase());
+      const matchesCat = categoryFilter === 'all' || p.category === categoryFilter;
+      const matchesStock = stockFilter === 'all' 
+        ? true 
+        : stockFilter === 'in_stock' ? p.stock > 0 : p.stock === 0;
+      
+      return matchesSearch && matchesCat && matchesStock;
+    });
+  }, [products, search, categoryFilter, stockFilter]);
 
   return (
-    <div className="bg-white shadow rounded-lg p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Manage Products</h2>
-        <Link to="/seller/products/add" className="bg-blue-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-blue-700">
-          Add New Product
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">My Products</h1>
+          <p className="text-sm text-slate-500 mt-1">Manage and track your product inventory ({products.length})</p>
+        </div>
+        <Link to="/seller/products/add">
+          <Button icon={<FaPlus />} variant="primary">
+            Add New Product
+          </Button>
         </Link>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Product</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Price</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Stock</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200 text-sm">
-            {products.map(product => (
-              <tr key={product._id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 flex items-center space-x-4">
-                  <img src={product.image} alt={product.title} className="w-12 h-12 rounded object-cover" />
-                  <div>
-                    <p className="font-semibold text-gray-900">{product.title}</p>
-                    <p className="text-gray-500 text-xs">{product.category}</p>
+      <Card padding="sm" className="bg-slate-50 border-none shadow-none">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Input
+            placeholder="Search products..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            icon={<FaSearch />}
+          />
+          <Select
+            options={CATEGORIES}
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
+          />
+          <Select
+            options={STOCK_STATUS}
+            value={stockFilter}
+            onChange={e => setStockFilter(e.target.value)}
+          />
+        </div>
+      </Card>
+
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <Card className="py-12">
+          <EmptyState
+            icon={FaBoxOpen}
+            title={products.length === 0 ? "No products yet" : "No products found"}
+            description={products.length === 0 ? "Start adding products to your store to get sales." : "Try adjusting your search or filters."}
+            actionLabel={products.length === 0 ? "Add Product" : "Clear Filters"}
+            onAction={() => products.length === 0 ? navigate('/seller/products/add') : (() => { setSearch(''); setCategoryFilter('all'); setStockFilter('all'); })()}
+          />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredProducts.map(product => (
+            <Card key={product._id} padding="none" className="overflow-hidden flex flex-col hover:border-orange-200">
+              <div className="h-48 overflow-hidden bg-slate-100 relative">
+                <img 
+                  src={product.image || 'https://via.placeholder.com/300?text=No+Image'} 
+                  alt={product.title} 
+                  className="w-full h-full object-cover transition-transform hover:scale-105"
+                />
+                <div className="absolute top-2 right-2 flex flex-col gap-2">
+                  <Badge variant="neutral" className="bg-white/90 backdrop-blur shadow-sm capitalize">
+                    {product.category}
+                  </Badge>
+                  {product.stock <= 0 && (
+                    <Badge variant="danger" className="bg-white/90 backdrop-blur shadow-sm">
+                      Out of Stock
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <div className="p-4 flex flex-col flex-1">
+                <div className="flex justify-between items-start gap-2 mb-2">
+                  <h3 className="font-semibold text-slate-900 line-clamp-2" title={product.title}>
+                    {product.title}
+                  </h3>
+                  <div className="flex items-center text-orange-500 text-sm font-medium bg-orange-50 px-2 py-0.5 rounded flex-shrink-0">
+                    <FaStar className="mr-1" size={12} />
+                    {product.rating ? product.rating.toFixed(1) : 'New'}
                   </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-800 font-semibold">₹{product.price}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-800">{product.stock}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
-                  <Link to={`/seller/products/edit/${product._id}`} className="text-indigo-600 hover:text-indigo-900">Edit</Link>
-                  <button onClick={() => deleteProduct(product._id)} className="text-red-500 hover:text-red-700">Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {products.length === 0 && <p className="text-center py-6 text-gray-500">You haven't added any products yet.</p>}
-      </div>
+                </div>
+                
+                <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-100">
+                  <div>
+                    <div className="text-lg font-bold text-slate-900">₹{product.price}</div>
+                    <div className="text-xs text-slate-500">Stock: <span className={product.stock > 0 ? "text-slate-700 font-medium" : "text-red-500 font-medium"}>{product.stock}</span></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-8 h-8 !p-0 !rounded-full text-slate-400 hover:text-blue-500 hover:bg-blue-50"
+                      onClick={() => navigate(`/seller/products/edit/${product._id}`)}
+                    >
+                      <FaEdit />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-8 h-8 !p-0 !rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50"
+                      onClick={() => setDeleteDialog({ isOpen: true, productId: product._id })}
+                    >
+                      <FaTrash />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={() => setDeleteDialog({ isOpen: false, productId: null })}
+        onConfirm={handleDelete}
+        title="Delete Product"
+        message="Are you sure you want to delete this product? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   );
 };

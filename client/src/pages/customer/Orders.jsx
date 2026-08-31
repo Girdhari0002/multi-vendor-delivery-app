@@ -1,82 +1,33 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 import Spinner from '../../components/Spinner';
 import { getSocket } from '../../api/socket';
 import LiveTrackingMap from '../../components/LiveTrackingMap';
-
-const TrackingUI = ({ order }) => {
-  const status = order.orderStatus;
-  const steps = [
-    { label: 'placed', date: order.createdAt },
-    { label: 'shipped', date: order.shippedAt },
-    { label: 'delivered', date: order.deliveredAt }
-  ];
-  
-  const statusList = steps.map(s => s.label);
-  const currentIndex = statusList.indexOf(status);
-
-  if (currentIndex === -1) return null;
-
-  return (
-    <div className="w-full py-6">
-      <div className="relative flex justify-between items-start w-full">
-        {/* Background Track */}
-        <div className="absolute left-[16%] right-[16%] top-4 h-1 bg-gray-200"></div>
-        {/* Progress Track */}
-        <div 
-          className="absolute left-[16%] top-4 h-1 bg-green-500 transition-all duration-500"
-          style={{ width: `${(currentIndex / (steps.length - 1)) * 68}%` }}
-        ></div>
-
-        {steps.map((step, index) => {
-          const isCompleted = currentIndex >= index;
-          return (
-            <div key={step.label} className="flex flex-col items-center relative z-10 w-1/3">
-              <div 
-                className={`w-8 h-8 rounded-full flex items-center justify-center 
-                ${isCompleted ? 'bg-green-500 text-white shadow-md' : 'bg-gray-200 text-gray-500'} text-xs font-bold transition-colors duration-300`}
-              >
-                {isCompleted ? '✓' : index + 1}
-              </div>
-              <div className={`text-[10px] sm:text-xs mt-2 font-semibold uppercase text-center w-full ${isCompleted ? 'text-green-600' : 'text-gray-400'}`}>
-                {step.label}
-              </div>
-              {isCompleted && step.date && (
-                <div className="text-[9px] sm:text-[10px] text-gray-500 mt-1 text-center font-medium">
-                  {new Date(step.date).toLocaleDateString()} {new Date(step.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
+import Tabs from '../../components/ui/Tabs';
+import Badge from '../../components/ui/Badge';
+import Card from '../../components/ui/Card';
+import StepProgress from '../../components/ui/StepProgress';
+import Button from '../../components/ui/Button';
+import Modal from '../../components/ui/Modal';
+import EmptyState from '../../components/ui/EmptyState';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { FaBox, FaChevronDown, FaChevronUp, FaPhoneAlt } from 'react-icons/fa';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('All');
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [cancelDialog, setCancelDialog] = useState({ isOpen: false, orderId: null });
+  const [cancelling, setCancelling] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const { data } = await api.get('/orders/user');
-        setOrders(data);
-      } catch (error) {
-        toast.error('Failed to load orders');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchOrders();
 
-    // Socket.io Setup for Real-Time Order Updates
     const socket = getSocket();
-
     const handleConnect = () => {
       if (user?._id) {
         socket.emit('join_room', user._id.toString());
@@ -101,56 +52,286 @@ const Orders = () => {
     };
   }, [user]);
 
-  if (loading) return <Spinner />;
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/orders/user');
+      setOrders(data);
+    } catch (error) {
+      toast.error('Failed to load orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    const { orderId } = cancelDialog;
+    if (!orderId) return;
+
+    try {
+      setCancelling(true);
+      await api.put(`/orders/${orderId}/cancel`);
+      toast.success('Order cancelled successfully');
+      setOrders(prev => prev.map(o => o._id === orderId ? { ...o, orderStatus: 'cancelled' } : o));
+      setCancelDialog({ isOpen: false, orderId: null });
+    } catch (error) {
+      toast.error('Failed to cancel order');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const tabs = [
+    { key: 'All', label: 'All', count: orders.length },
+    { key: 'placed', label: 'Placed', count: orders.filter(o => o.orderStatus === 'placed').length },
+    { key: 'shipped', label: 'Shipped', count: orders.filter(o => o.orderStatus === 'shipped').length },
+    { key: 'delivered', label: 'Delivered', count: orders.filter(o => o.orderStatus === 'delivered').length },
+    { key: 'cancelled', label: 'Cancelled', count: orders.filter(o => o.orderStatus === 'cancelled').length },
+  ];
+
+  const filteredOrders = activeTab === 'All' 
+    ? orders 
+    : orders.filter(o => o.orderStatus === activeTab);
+
+  const getStatusBadgeVariant = (status) => {
+    switch (status) {
+      case 'delivered': return 'success';
+      case 'cancelled': return 'danger';
+      case 'shipped': return 'info';
+      case 'placed': return 'primary';
+      case 'failed': return 'danger';
+      default: return 'neutral';
+    }
+  };
+
+  const getSteps = (order) => {
+    const status = order.orderStatus;
+    const isCancelled = status === 'cancelled';
+    const isFailed = status === 'failed';
+    
+    if (isCancelled || isFailed) {
+      return [
+        { label: 'Order Placed', timestamp: new Date(order.createdAt).toLocaleString(), completed: true },
+        { label: isCancelled ? 'Cancelled' : 'Failed', completed: true, active: true }
+      ];
+    }
+
+    const steps = [
+      { label: 'Order Placed', timestamp: new Date(order.createdAt).toLocaleString(), completed: true }
+    ];
+
+    const isShipped = ['shipped', 'delivered'].includes(status);
+    const isDelivered = status === 'delivered';
+
+    steps.push({
+      label: 'Packed/Processing',
+      completed: isShipped,
+      active: status === 'placed'
+    });
+
+    steps.push({
+      label: 'Shipped',
+      timestamp: order.shippedAt ? new Date(order.shippedAt).toLocaleString() : undefined,
+      completed: isShipped,
+      active: status === 'shipped'
+    });
+
+    steps.push({
+      label: 'Delivered',
+      timestamp: order.deliveredAt ? new Date(order.deliveredAt).toLocaleString() : undefined,
+      completed: isDelivered,
+      active: status === 'delivered'
+    });
+
+    return steps;
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
 
   return (
-    <div className="bg-white shadow rounded-lg p-6">
-      <h2 className="text-2xl font-bold mb-6">My Orders</h2>
-      {orders.length === 0 ? (
-        <p className="text-gray-500">You haven't placed any orders yet.</p>
-      ) : (
-        <div className="space-y-6">
-          {orders.map(order => (
-            <div key={order._id} className="border rounded-lg p-6 flex flex-col hover:shadow-md transition">
-              <div className="flex flex-col md:flex-row justify-between w-full">
-                <div>
-                  <p className="text-sm text-gray-400 mb-2">Order ID: {order._id}</p>
-                  <div className="space-y-2 mb-4">
-                    {order.items.map(item => (
-                      <div key={item.productId?._id} className="flex space-x-4 text-gray-800">
-                        <span className="font-semibold">{item.quantity} x</span>
-                        <span>{item.productId?.title || 'Unknown Product'}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="font-bold text-lg text-blue-600">Total: ₹{order.totalPrice || order.totalAmount || 0}</p>
-                  <p className="text-sm mt-2"><span className="font-semibold text-gray-600">Delivering to:</span> {order.deliveryAddress}</p>
-                </div>
-                <div className="mt-4 md:mt-0 flex flex-col justify-between items-end">
-                  <span className={`px-4 py-1 text-sm font-bold uppercase rounded-full ${order.orderStatus === 'failed' ? 'bg-red-100 text-red-700' : order.orderStatus === 'delivered' ? 'bg-green-100 text-green-700' : order.orderStatus === 'shipped' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    {order.orderStatus === 'failed' ? 'Transaction Failed' : order.orderStatus}
-                  </span>
-                  <span className="text-xs text-gray-400 mt-2">{new Date(order.createdAt).toLocaleString()}</span>
-                </div>
-              </div>
-              
-              {order.orderStatus !== 'failed' && (
-                <div className="mt-6 border-t pt-4">
-                  <h4 className="text-sm font-semibold text-gray-600 mb-2">Delivery Status</h4>
-                  <TrackingUI order={order} />
-                </div>
-              )}
+    <div className="max-w-5xl mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">My Orders</h1>
+      
+      <div className="mb-6 bg-white p-2 rounded-xl shadow-sm border border-slate-100">
+        <Tabs 
+          tabs={tabs} 
+          activeTab={activeTab} 
+          onChange={setActiveTab} 
+          variant="pills" 
+        />
+      </div>
 
-              {order.orderStatus === 'shipped' && order.deliveryAgentId && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-semibold text-gray-600 mb-2">Live Location</h4>
-                  <LiveTrackingMap orderId={order._id} initialLocation={order.currentLocation} />
+      {filteredOrders.length === 0 ? (
+        <Card>
+          <EmptyState 
+            icon={FaBox} 
+            title="No orders yet" 
+            description="Looks like you haven't placed any orders in this category." 
+            actionLabel="Start Shopping"
+            onAction={() => window.location.href = '/'}
+          />
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {filteredOrders.map(order => {
+            const isExpanded = expandedOrderId === order._id;
+            const statusLabel = order.orderStatus === 'failed' ? 'Failed' : order.orderStatus.charAt(0).toUpperCase() + order.orderStatus.slice(1);
+            
+            return (
+              <Card key={order._id} className="overflow-hidden" padding="none">
+                <div 
+                  className="p-5 flex flex-col md:flex-row md:items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                  onClick={() => setExpandedOrderId(isExpanded ? null : order._id)}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-sm font-medium text-slate-500">Order #{order._id.slice(-8)}</span>
+                      <Badge variant={getStatusBadgeVariant(order.orderStatus)} size="sm">
+                        {statusLabel}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex -space-x-2">
+                        {order.items.slice(0, 3).map((item, idx) => (
+                          <div key={idx} className="w-10 h-10 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center overflow-hidden">
+                            {item.productId?.images?.[0] ? (
+                              <img src={item.productId.images[0]} alt={item.productId.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <FaBox className="text-slate-300 text-xs" />
+                            )}
+                          </div>
+                        ))}
+                        {order.items.length > 3 && (
+                          <div className="w-10 h-10 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
+                            +{order.items.length - 3}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-slate-600 text-sm">
+                        {order.items.length} item{order.items.length > 1 ? 's' : ''} • <span className="font-semibold text-slate-900">₹{order.totalPrice || order.totalAmount || 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 md:mt-0 flex items-center justify-between md:justify-end w-full md:w-auto gap-4">
+                    <div className="text-sm text-slate-500">
+                      {new Date(order.createdAt).toLocaleDateString()}
+                    </div>
+                    <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
+                      {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {isExpanded && (
+                  <div className="border-t border-slate-100 bg-slate-50 p-5 animate-in slide-in-from-top-2 duration-200">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Left Col: Items and Tracking */}
+                      <div className="space-y-8">
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-900 mb-4 uppercase tracking-wider">Order Items</h4>
+                          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                            <ul className="divide-y divide-slate-100">
+                              {order.items.map(item => (
+                                <li key={item.productId?._id || Math.random()} className="p-4 flex justify-between items-center">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 bg-slate-100 rounded object-cover flex items-center justify-center overflow-hidden">
+                                      {item.productId?.images?.[0] ? (
+                                        <img src={item.productId.images[0]} alt={item.productId.title} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <FaBox className="text-slate-300" />
+                                      )}
+                                    </div>
+                                    <div>
+                                      <p className="font-medium text-slate-900 text-sm">{item.productId?.title || 'Unknown Product'}</p>
+                                      <p className="text-xs text-slate-500">Qty: {item.quantity}</p>
+                                    </div>
+                                  </div>
+                                  <div className="font-semibold text-slate-900">
+                                    ₹{item.price * item.quantity}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="bg-slate-50 p-4 flex justify-between items-center border-t border-slate-200">
+                              <span className="font-medium text-slate-700">Total</span>
+                              <span className="font-bold text-lg text-slate-900">₹{order.totalPrice || order.totalAmount || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-900 mb-6 uppercase tracking-wider">Order Status</h4>
+                          <StepProgress steps={getSteps(order)} orientation="vertical" />
+                        </div>
+                      </div>
+
+                      {/* Right Col: Map & Actions */}
+                      <div className="space-y-6">
+                        {order.orderStatus === 'shipped' && order.deliveryAgentId && (
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-900 mb-4 uppercase tracking-wider">Live Tracking</h4>
+                            <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                              <LiveTrackingMap orderId={order._id} initialLocation={order.currentLocation} />
+                            </div>
+                            {order.deliveryAgentId && (
+                              <div className="mt-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                                <div>
+                                  <p className="text-xs text-slate-500 uppercase font-semibold">Delivery Partner</p>
+                                  <p className="font-medium text-slate-900">{order.deliveryAgentId.name || 'Agent Assigned'}</p>
+                                </div>
+                                {order.deliveryAgentId.phone && (
+                                  <a href={`tel:${order.deliveryAgentId.phone}`}>
+                                    <Button size="sm" variant="outline" icon={<FaPhoneAlt />}>Call</Button>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                          <h4 className="text-sm font-semibold text-slate-900 mb-2 uppercase tracking-wider">Delivery Details</h4>
+                          <p className="text-slate-600 text-sm">{order.deliveryAddress}</p>
+                        </div>
+
+                        <div className="flex gap-3 pt-4">
+                          {order.orderStatus === 'placed' && (
+                            <Button 
+                              variant="danger" 
+                              onClick={() => setCancelDialog({ isOpen: true, orderId: order._id })}
+                            >
+                              Cancel Order
+                            </Button>
+                          )}
+                          {order.orderStatus === 'delivered' && (
+                            <Button 
+                              variant="primary"
+                              onClick={() => window.location.href = '/'}
+                            >
+                              Re-order Items
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={cancelDialog.isOpen}
+        onClose={() => setCancelDialog({ isOpen: false, orderId: null })}
+        onConfirm={handleCancelOrder}
+        loading={cancelling}
+        title="Cancel Order"
+        message="Are you sure you want to cancel this order? This action cannot be undone."
+        variant="danger"
+        confirmLabel="Yes, Cancel Order"
+      />
     </div>
   );
 };

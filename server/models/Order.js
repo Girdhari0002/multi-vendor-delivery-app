@@ -6,6 +6,10 @@ const orderSchema = new mongoose.Schema({
   items: [
     {
       productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+      // Snapshotted at order time, like productName/productImage — so seller-scoped queries
+      // (dashboard stats, seller orders, payouts) still work after the product is deleted,
+      // instead of relying on populating productId.sellerId at read time.
+      sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       quantity: { type: Number, required: true },
       price: { type: Number, required: true },
       productName: { type: String },
@@ -67,7 +71,15 @@ const orderSchema = new mongoose.Schema({
   couponCode: { type: String },
   refundStatus: { type: String, enum: ['none', 'pending', 'completed', 'failed'], default: 'none' },
   refundId: { type: String },
-  refundAmount: { type: Number }
+  refundAmount: { type: Number },
+  // Third-party courier (Borzo) booking — set when the order is handed off for pickup.
+  borzo: {
+    orderId: { type: String },
+    status: { type: String },
+    courierName: { type: String },
+    courierPhone: { type: String },
+    trackingUrl: { type: String },
+  }
 }, { timestamps: true });
 
 // Auto-generate invoice number

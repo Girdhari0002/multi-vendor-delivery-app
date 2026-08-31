@@ -1,5 +1,5 @@
 import express from 'express';
-import { placeOrder, getUserOrders, getSellerOrders, getAdminOrders, updateOrderStatus, getOrderInvoice, getMyOrders, getOrderById, assignDeliveryAgent } from '../controllers/orderController.js';
+import { placeOrder, getUserOrders, getSellerOrders, getAdminOrders, updateOrderStatus, getOrderInvoice, getMyOrders, getOrderById, assignDeliveryAgent, cancelOrder } from '../controllers/orderController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { authorizeRoles } from '../middleware/roleMiddleware.js';
 import { validate } from '../middleware/validate.js';
@@ -86,6 +86,7 @@ router.get('/my-orders', protect, authorizeRoles('customer'), getMyOrders);
  */
 router.put('/:id/status', protect, authorizeRoles('seller', 'admin'), validate({ params: idParamSchema, body: updateOrderStatusSchema }), updateOrderStatus);
 router.put('/:id/assign-agent', protect, authorizeRoles('admin'), validate({ params: idParamSchema, body: assignAgentSchema }), assignDeliveryAgent);
+router.put('/:id/cancel', protect, authorizeRoles('customer'), validate({ params: idParamSchema }), cancelOrder);
 router.get('/:id/invoice', protect, validate({ params: idParamSchema }), getOrderInvoice);
 
 /**

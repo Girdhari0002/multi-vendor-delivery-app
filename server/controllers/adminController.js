@@ -170,7 +170,7 @@ export const getAllSellers = async (req, res) => {
     for (const order of orders) {
       const sellersInOrder = new Set();
       for (const item of order.items) {
-        const sellerId = item.productId?.sellerId?.toString();
+        const sellerId = item.sellerId?.toString() || item.productId?.sellerId?.toString();
         if (!sellerId) continue;
         sellersInOrder.add(sellerId);
 

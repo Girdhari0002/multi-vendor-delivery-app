@@ -7,8 +7,8 @@ const DEFAULT_COMMISSION_RATE = 10; // percent
 // Sums up a seller's share of an order's items (an order can contain items from multiple sellers).
 const sellerShareOfOrder = (order, sellerId) => {
   return order.items.reduce((sum, item) => {
-    const product = item.productId;
-    if (product && product.sellerId && product.sellerId.toString() === sellerId.toString()) {
+    const itemSellerId = item.sellerId?.toString() || item.productId?.sellerId?.toString();
+    if (itemSellerId && itemSellerId === sellerId.toString()) {
       return sum + item.price * item.quantity;
     }
     return sum;

@@ -57,7 +57,15 @@ const userSchema = new mongoose.Schema({
   storeDescription: { type: String },
   storeLogo: { type: String },
   storeStatus: { type: String, enum: ['active', 'inactive'], default: 'active' },
-  acceptsCOD: { type: Boolean, default: true }
+  acceptsCOD: { type: Boolean, default: true },
+  // Pickup location used when booking a courier (e.g. Borzo) for a seller's shipped orders.
+  storeAddress: {
+    street: { type: String },
+    city: { type: String },
+    state: { type: String },
+    zip: { type: String },
+    country: { type: String, default: 'India' },
+  }
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);

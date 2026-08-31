@@ -1,14 +1,23 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
-import Spinner from '../../components/Spinner';
+import { FaTrash } from 'react-icons/fa';
+import DataTable from '../../components/ui/DataTable';
+import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
+import SearchBar from '../../components/ui/SearchBar';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { SkeletonTable } from '../../components/ui/Skeleton';
 
 const AdminProducts = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, productId: null, loading: false });
 
   const fetchProducts = async () => {
     try {
+      setLoading(true);
       const { data } = await api.get('/products', { params: { limit: 1000 } });
       setProducts(data.products || []);
     } catch (error) {
@@ -22,53 +31,121 @@ const AdminProducts = () => {
     fetchProducts();
   }, []);
 
-  const deleteProduct = async (id) => {
-    if (window.confirm('Delete this product? Action cannot be undone.')) {
-      try {
-        await api.delete(`/admin/product/${id}`);
-        toast.success('Product deleted by admin');
-        fetchProducts();
-      } catch (error) {
-        toast.error('Failed to delete product');
-      }
+  const handleDelete = async () => {
+    setDeleteDialog(prev => ({ ...prev, loading: true }));
+    try {
+      await api.delete(`/admin/product/${deleteDialog.productId}`);
+      toast.success('Product deleted by admin');
+      setProducts(prev => prev.filter(p => p._id !== deleteDialog.productId));
+    } catch (error) {
+      toast.error('Failed to delete product');
+    } finally {
+      setDeleteDialog({ isOpen: false, productId: null, loading: false });
     }
   };
 
-  if (loading) return <Spinner />;
+  const columns = [
+    {
+      key: 'title',
+      label: 'Product',
+      sortable: true,
+      render: (_, p) => (
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
+            {p.image && <img src={p.image} alt={p.title} className="w-full h-full object-cover" />}
+          </div>
+          <div>
+            <div className="font-medium text-slate-800 line-clamp-1">{p.title}</div>
+            <div className="text-xs text-slate-500 font-mono">ID: {p._id.slice(-8)}</div>
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'category',
+      label: 'Category',
+      sortable: true,
+      render: (val) => <Badge variant="info">{val || 'Uncategorized'}</Badge>
+    },
+    {
+      key: 'seller',
+      label: 'Seller',
+      sortable: true,
+      render: (_, p) => <span className="font-medium text-indigo-600">{p.sellerId?.name || p.sellerId?.businessName || 'Unknown'}</span>
+    },
+    {
+      key: 'price',
+      label: 'Price',
+      sortable: true,
+      render: (val) => <span className="font-bold text-slate-900">₹{val}</span>
+    },
+    {
+      key: 'stock',
+      label: 'Stock',
+      sortable: true,
+      render: (val) => (
+        <span className={val > 10 ? 'text-green-600 font-medium' : val > 0 ? 'text-amber-500 font-medium' : 'text-red-500 font-bold'}>
+          {val || 0}
+        </span>
+      )
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (_, p) => (
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => setDeleteDialog({ isOpen: true, productId: p._id, loading: false })} 
+          icon={<FaTrash className="text-red-500" />} 
+          title="Delete Product" 
+        />
+      )
+    }
+  ];
+
+  const filteredProducts = products.filter(p => p.title?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div className="bg-white shadow rounded-lg p-6">
-      <h2 className="text-2xl font-bold mb-6">All Products Across Vendors</h2>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Product</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Seller</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Price</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {products.map(product => (
-              <tr key={product._id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 flex items-center space-x-4">
-                  <img src={product.image} className="w-10 h-10 rounded object-cover" alt="" />
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{product.title}</div>
-                    <div className="text-xs text-gray-500">ID: {product._id}</div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-indigo-600 font-semibold">{product.sellerId?.name || 'Unknown'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-bold">₹{product.price}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button onClick={() => deleteProduct(product._id)} className="text-red-500 hover:text-red-700">Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Products Management</h2>
+          <p className="text-slate-500 mt-1">Total {products.length} products across all vendors</p>
+        </div>
+        <div className="w-full md:w-72">
+          <SearchBar 
+            value={searchTerm} 
+            onChange={setSearchTerm} 
+            placeholder="Search products by name..." 
+          />
+        </div>
       </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        {loading ? (
+          <SkeletonTable rows={10} cols={6} />
+        ) : (
+          <DataTable 
+            columns={columns} 
+            data={filteredProducts} 
+            pagination 
+            pageSize={10} 
+            emptyMessage={searchTerm ? 'No products match your search.' : 'No products found.'}
+          />
+        )}
+      </div>
+
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={() => setDeleteDialog({ isOpen: false, productId: null, loading: false })}
+        onConfirm={handleDelete}
+        loading={deleteDialog.loading}
+        title="Delete Product"
+        message="Are you sure you want to delete this product? This action cannot be undone."
+        variant="danger"
+        confirmLabel="Delete"
+      />
     </div>
   );
 };

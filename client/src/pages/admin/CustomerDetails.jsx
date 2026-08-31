@@ -1,55 +1,65 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/axios';
-import { FaArrowLeft, FaLock, FaUnlock, FaEnvelope } from 'react-icons/fa';
+import { FaChevronRight, FaLock, FaUnlock, FaEnvelope } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import Avatar from '../../components/ui/Avatar';
+import Badge from '../../components/ui/Badge';
+import Card from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import Modal from '../../components/ui/Modal';
+import { SkeletonCard, SkeletonText } from '../../components/ui/Skeleton';
 
 const CustomerDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  
   const [customer, setCustomer] = useState(null);
   const [orders, setOrders] = useState([]);
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  const [confirmDialog, setConfirmDialog] = useState(false);
   const [toggling, setToggling] = useState(false);
+  
+  const [selectedOrder, setSelectedOrder] = useState(null);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       navigate('/login');
       return;
     }
+    const fetchCustomerData = async () => {
+      try {
+        setLoading(true);
+        const response = await api.get(`/admin/customers/${id}`);
+        setCustomer(response.data.customer);
+        setOrders(response.data.orders || []);
+        setAddresses(response.data.addresses || []);
+      } catch (error) {
+        toast.error('Failed to load customer data');
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchCustomerData();
   }, [id, user, navigate]);
-
-  const fetchCustomerData = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get(`/admin/customers/${id}`);
-      setCustomer(response.data.customer);
-      setOrders(response.data.orders || []);
-      setAddresses(response.data.addresses || []);
-    } catch (error) {
-      toast.error('Failed to load customer data');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleBlockUnblock = async () => {
     try {
       setToggling(true);
       const newStatus = customer.isBlocked ? 'unblock' : 'block';
       await api.put(`/admin/customers/${id}/${newStatus}`);
-      setCustomer((prev) => ({ ...prev, isBlocked: !prev.isBlocked }));
+      setCustomer(prev => ({ ...prev, isBlocked: !prev.isBlocked }));
       toast.success(`Customer ${newStatus}ed successfully`);
     } catch (error) {
-      toast.error(`Failed to ${customer.isBlocked ? 'unblock' : 'block'} customer`);
-      console.error(error);
+      toast.error('Failed to update status');
     } finally {
       setToggling(false);
+      setConfirmDialog(false);
     }
   };
 
@@ -60,232 +70,195 @@ const CustomerDetails = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-12">Loading...</div>;
-  }
-
-  if (!customer) {
     return (
-      <div className="text-center py-12 text-red-600">
-        Customer not found
+      <div className="p-8 max-w-6xl mx-auto space-y-6">
+        <SkeletonText lines={1} className="w-1/4" />
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }
 
-  const getInitials = (name) => {
-    return name
-      ?.split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase() || 'U';
-  };
+  if (!customer) return <div className="text-center py-12 text-red-500 font-medium">Customer not found</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Back Button */}
-        <button
-          onClick={() => navigate('/admin/users')}
-          className="mb-6 flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold transition"
-        >
-          <FaArrowLeft /> Back to Customers
-        </button>
+    <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      {/* Breadcrumb */}
+      <nav className="flex items-center text-sm font-medium text-slate-500 mb-6 space-x-2">
+        <Link to="/admin" className="hover:text-orange-500 transition-colors">Admin</Link>
+        <FaChevronRight size={10} />
+        <Link to="/admin/users" className="hover:text-orange-500 transition-colors">Users</Link>
+        <FaChevronRight size={10} />
+        <span className="text-slate-900">{customer.name}</span>
+      </nav>
 
-        {/* Customer Info */}
-        <div className="bg-white rounded-lg shadow-md p-8 mb-8">
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex items-center gap-6">
-              <div className="w-24 h-24 rounded-full bg-orange-400 flex items-center justify-center text-white text-4xl font-bold">
-                {customer.profilePicture ? (
-                  <img src={customer.profilePicture} alt={customer.name} className="w-full h-full rounded-full object-cover" />
-                ) : (
-                  getInitials(customer.name)
-                )}
+      {/* Profile Card */}
+      <Card className="mb-8 p-6 md:p-8">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="flex items-center gap-6">
+            <Avatar src={customer.profilePicture} name={customer.name} size="xl" />
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 mb-1">{customer.name}</h1>
+              <div className="flex items-center gap-3 text-slate-500 mb-3">
+                <FaEnvelope /> <span>{customer.email}</span>
+                {customer.phone && <span>• {customer.phone}</span>}
               </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">{customer.name}</h1>
-                <p className="text-gray-600">{customer.email}</p>
-                <p className="text-gray-600">{customer.phone}</p>
-                <p className="text-xs text-gray-500 mt-2">
-                  Member since {new Date(customer.createdAt).toLocaleDateString()}
-                </p>
-                {customer.lastLogin && (
-                  <p className="text-xs text-gray-500">
-                    Last login: {new Date(customer.lastLogin).toLocaleString()}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div className={`px-4 py-2 rounded-lg text-white font-semibold text-center ${
-                customer.isBlocked
-                  ? 'bg-red-600'
-                  : 'bg-green-600'
-              }`}>
+              <Badge variant={customer.isBlocked ? 'danger' : 'success'} dot>
                 {customer.isBlocked ? 'BLOCKED' : 'ACTIVE'}
-              </div>
-              <button
-                onClick={handleBlockUnblock}
-                disabled={toggling}
-                className={`px-4 py-2 rounded-lg font-semibold flex items-center justify-center gap-2 transition ${
-                  customer.isBlocked
-                    ? 'bg-green-600 text-white hover:bg-green-700'
-                    : 'bg-red-600 text-white hover:bg-red-700'
-                }`}
-              >
-                {customer.isBlocked ? <FaUnlock /> : <FaLock />}
-                {customer.isBlocked ? 'Unblock' : 'Block'}
-              </button>
-              <a
-                href={`mailto:${customer.email}`}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold flex items-center justify-center gap-2"
-              >
-                <FaEnvelope /> Send Email
-              </a>
+              </Badge>
+              <p className="text-xs text-slate-400 mt-3">Member since {new Date(customer.createdAt).toLocaleDateString()}</p>
             </div>
           </div>
-
-          {/* Personal Info */}
-          <div className="border-t pt-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Personal Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="text-sm text-gray-600 font-semibold">Full Name</label>
-                <p className="text-lg text-gray-900 mt-1">{customer.name}</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 font-semibold">Email</label>
-                <p className="text-lg text-gray-900 mt-1">{customer.email}</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 font-semibold">Phone</label>
-                <p className="text-lg text-gray-900 mt-1">{customer.phone || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 font-semibold">Gender</label>
-                <p className="text-lg text-gray-900 mt-1">{customer.gender || 'Not provided'}</p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 font-semibold">Date of Birth</label>
-                <p className="text-lg text-gray-900 mt-1">
-                  {customer.dateOfBirth
-                    ? new Date(customer.dateOfBirth).toLocaleDateString()
-                    : 'Not provided'}
-                </p>
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 font-semibold">Total Amount Spent</label>
-                <p className="text-lg font-bold text-orange-600">₹{calculateTotalSpent().toFixed(2)}</p>
-              </div>
-            </div>
+          
+          <div className="flex gap-3 w-full md:w-auto">
+            <Button
+              variant={customer.isBlocked ? 'success' : 'danger'}
+              icon={customer.isBlocked ? <FaUnlock /> : <FaLock />}
+              onClick={() => setConfirmDialog(true)}
+            >
+              {customer.isBlocked ? 'Unblock' : 'Block'}
+            </Button>
+            <Button
+              variant="outline"
+              icon={<FaEnvelope />}
+              onClick={() => window.location.href = `mailto:${customer.email}`}
+            >
+              Email
+            </Button>
           </div>
         </div>
 
-        {/* Addresses */}
-        {addresses.length > 0 && (
-          <div className="bg-white rounded-lg shadow-md p-8 mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Saved Addresses</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {addresses.map((address) => (
-                <div key={address._id} className="border border-gray-300 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-gray-900">{address.label}</h3>
-                    {address.isDefault && (
-                      <span className="bg-orange-400 text-white text-xs px-2 py-1 rounded-full">
-                        Default
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-gray-700 text-sm mb-1">{address.street}</p>
-                  <p className="text-gray-700 text-sm mb-1">
-                    {address.city}, {address.state} - {address.zip}
-                  </p>
-                  <p className="text-gray-700 text-sm">{address.country}</p>
+        <div className="border-t border-slate-100 mt-8 pt-8 grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div>
+            <p className="text-sm font-medium text-slate-500 mb-1">Gender</p>
+            <p className="font-semibold text-slate-900">{customer.gender || 'Not provided'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-500 mb-1">Date of Birth</p>
+            <p className="font-semibold text-slate-900">{customer.dateOfBirth ? new Date(customer.dateOfBirth).toLocaleDateString() : 'Not provided'}</p>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-500 mb-1">Total Orders</p>
+            <p className="font-semibold text-slate-900">{orders.length}</p>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-500 mb-1">Total Spent</p>
+            <p className="font-bold text-orange-500 text-lg">₹{calculateTotalSpent().toFixed(2)}</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Saved Addresses */}
+      {addresses.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xl font-bold text-slate-900 mb-4">Saved Addresses</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {addresses.map((address) => (
+              <Card key={address._id} padding="md" className="border-l-4 border-l-orange-500">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-bold text-slate-800">{address.label || 'Address'}</h3>
+                  {address.isDefault && <Badge variant="primary" size="sm">Default</Badge>}
                 </div>
-              ))}
-            </div>
+                <p className="text-sm text-slate-600 mb-1">{address.street}</p>
+                <p className="text-sm text-slate-600">{address.city}, {address.state} - {address.zip}</p>
+                <p className="text-sm text-slate-600 font-medium mt-2">{address.country}</p>
+              </Card>
+            ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Order History */}
-        {orders.length > 0 && (
-          <div className="bg-white rounded-lg shadow-md p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Order History</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-300 bg-gray-50">
-                    <th className="px-4 py-3 text-left font-semibold text-gray-900">Order ID</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-900">Date</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-900">Items</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-900">Total</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-900">Payment</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-900">Status</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-900">Action</th>
+      {/* Orders */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-900 mb-4">Order History</h2>
+        {orders.length > 0 ? (
+          <Card padding="none" className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-4 font-medium">Order ID</th>
+                  <th className="px-6 py-4 font-medium">Date</th>
+                  <th className="px-6 py-4 font-medium">Amount</th>
+                  <th className="px-6 py-4 font-medium">Payment</th>
+                  <th className="px-6 py-4 font-medium">Status</th>
+                  <th className="px-6 py-4 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {orders.map((order) => (
+                  <tr key={order._id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 font-medium text-slate-800">#{order._id.slice(-8).toUpperCase()}</td>
+                    <td className="px-6 py-4 text-slate-500">{new Date(order.createdAt).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 font-bold text-slate-900">₹{order.totalPrice || 0}</td>
+                    <td className="px-6 py-4">
+                      <Badge variant={order.paymentStatus === 'completed' ? 'success' : 'warning'}>
+                        {order.paymentStatus || 'Pending'}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge variant={order.orderStatus === 'delivered' ? 'success' : 'primary'}>
+                        {order.orderStatus || 'Processing'}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedOrder(order)}>View</Button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {orders.map((order) => (
-                    <tr key={order._id} className="border-b border-gray-200 hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
-                        <a
-                          href={`/admin/orders/${order._id}`}
-                          className="text-blue-600 hover:text-blue-800 font-semibold"
-                        >
-                          {order._id.slice(-8).toUpperCase()}
-                        </a>
-                      </td>
-                      <td className="px-4 py-3">{new Date(order.createdAt).toLocaleDateString()}</td>
-                      <td className="px-4 py-3">{order.items?.length || 0}</td>
-                      <td className="px-4 py-3 font-semibold">₹{order.totalPrice || 0}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            order.paymentStatus === 'completed'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}
-                        >
-                          {order.paymentStatus || 'Pending'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            order.orderStatus === 'delivered'
-                              ? 'bg-green-100 text-green-800'
-                              : order.orderStatus === 'shipped'
-                              ? 'bg-blue-100 text-blue-800'
-                              : order.orderStatus === 'placed'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {order.orderStatus || 'Unknown'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => navigate(`/admin/orders/${order._id}`)}
-                          className="text-blue-600 hover:text-blue-800 text-xs font-semibold"
-                        >
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {orders.length === 0 && (
-          <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-600">
-            No orders found for this customer
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        ) : (
+          <div className="text-slate-500 p-8 text-center bg-white rounded-xl border border-slate-100">
+            No orders found for this customer.
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDialog}
+        onClose={() => setConfirmDialog(false)}
+        onConfirm={handleBlockUnblock}
+        loading={toggling}
+        title={customer.isBlocked ? 'Unblock Customer' : 'Block Customer'}
+        message={`Are you sure you want to ${customer.isBlocked ? 'unblock' : 'block'} ${customer.name}?`}
+        variant="warning"
+      />
+
+      {/* Order Details Modal */}
+      {selectedOrder && (
+        <Modal isOpen={true} onClose={() => setSelectedOrder(null)} className="max-w-2xl">
+          <div className="p-6">
+            <h2 className="text-xl font-bold mb-4">Order #{selectedOrder._id.slice(-8).toUpperCase()}</h2>
+            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+              <div><span className="text-slate-500">Date:</span> {new Date(selectedOrder.createdAt).toLocaleString()}</div>
+              <div><span className="text-slate-500">Total:</span> ₹{selectedOrder.totalPrice}</div>
+              <div><span className="text-slate-500">Status:</span> {selectedOrder.orderStatus}</div>
+              <div><span className="text-slate-500">Payment:</span> {selectedOrder.paymentStatus}</div>
+            </div>
+            <h3 className="font-bold text-slate-800 mb-3">Items</h3>
+            <ul className="space-y-3">
+              {(selectedOrder.items || []).map((item, idx) => (
+                <li key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-slate-200 rounded overflow-hidden">
+                      {item.product?.image && <img src={item.product.image} className="w-full h-full object-cover" alt="" />}
+                    </div>
+                    <div>
+                      <p className="font-medium">{item.product?.title || 'Unknown Product'}</p>
+                      <p className="text-xs text-slate-500">Qty: {item.quantity}</p>
+                    </div>
+                  </div>
+                  <div className="font-bold">₹{item.price * item.quantity}</div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-6 flex justify-end">
+              <Button variant="outline" onClick={() => setSelectedOrder(null)}>Close</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

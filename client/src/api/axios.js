@@ -22,4 +22,20 @@ api.interceptors.request.use(
   }
 );
 
+// If a request that carried our token comes back 401, the token is expired/invalid rather
+// than the credentials being wrong (a plain login attempt never has this header set) — clear
+// the stale session and send the user back to log in instead of leaving pages silently broken.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && error.config?.headers?.Authorization) {
+      localStorage.removeItem('userInfo');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

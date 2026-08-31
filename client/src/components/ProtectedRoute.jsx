@@ -16,11 +16,11 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     // If user's role isn't allowed, redirect according to what they are
     switch (user.role) {
       case 'seller':
-        return <Navigate to="/seller/dashboard" />;
+        return <Navigate to="/seller" />;
       case 'admin':
-        return <Navigate to="/admin/dashboard" />;
+        return <Navigate to="/admin" />;
       case 'delivery':
-        return <Navigate to="/delivery/dashboard" />;
+        return <Navigate to="/delivery" />;
       default:
         return <Navigate to="/" />;
     }

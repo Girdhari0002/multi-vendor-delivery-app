@@ -18,8 +18,8 @@ export const getSellerProfile = async (req, res) => {
 // Update Seller Profile
 export const updateSellerProfile = async (req, res) => {
   try {
-    const { businessName, businessType, gstNumber, storeDescription, storeLogo, storeStatus } = req.body;
-    
+    const { businessName, businessType, gstNumber, storeDescription, storeLogo, storeStatus, storeAddress, phone } = req.body;
+
     const seller = await User.findByIdAndUpdate(
       req.user.id,
       {
@@ -28,7 +28,9 @@ export const updateSellerProfile = async (req, res) => {
         gstNumber,
         storeDescription,
         storeLogo,
-        storeStatus
+        storeStatus,
+        ...(storeAddress && { storeAddress }),
+        ...(phone && { phone }),
       },
       { new: true, runValidators: true }
     ).select('-password');
@@ -82,8 +84,9 @@ export const getSellerStats = async (req, res) => {
     // An order can contain items from multiple sellers, so a seller's own orders/revenue
     // are derived from their items within each order, not a top-level Order.sellerId.
     const orders = await Order.find({}).populate('items.productId', 'sellerId');
+    const itemSellerId = (item) => item.sellerId?.toString() || item.productId?.sellerId?.toString();
     const myOrders = orders.filter((order) =>
-      order.items.some((item) => item.productId?.sellerId?.toString() === req.user.id.toString())
+      order.items.some((item) => itemSellerId(item) === req.user.id.toString())
     );
 
     const totalOrders = myOrders.length;
@@ -91,7 +94,7 @@ export const getSellerStats = async (req, res) => {
       .filter((o) => o.paymentMethod === 'cod' || o.paymentStatus === 'completed')
       .reduce((sum, order) => {
         const mine = order.items.reduce((itemSum, item) => {
-          if (item.productId?.sellerId?.toString() === req.user.id.toString()) {
+          if (itemSellerId(item) === req.user.id.toString()) {
             return itemSum + item.price * item.quantity;
           }
           return itemSum;

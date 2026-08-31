@@ -8,6 +8,8 @@ client/.env
 server/node_modules/
 server/dist/
 server/.env
+server/_check-orders2.mjs
+server/_check-seller.mjs
 
 # Environment variables
 .env

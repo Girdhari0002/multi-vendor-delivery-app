@@ -1,353 +1,192 @@
-import React, { useState, useEffect } from 'react';
-import { FaEye, FaTrash, FaCheck, FaTimes, FaSearch, FaSort } from 'react-icons/fa';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
-import { useAuth } from '../../context/AuthContext';
+import { FaTrash, FaEye } from 'react-icons/fa';
+import { toast } from 'react-toastify';
+import DataTable from '../../components/ui/DataTable';
+import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
+import Avatar from '../../components/ui/Avatar';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import SearchBar from '../../components/ui/SearchBar';
+import StatCard from '../../components/ui/StatCard';
 
 export default function ManageSellers() {
   const [sellers, setSellers] = useState([]);
-  const [filteredSellers, setFilteredSellers] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('name');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState('name');
+  
+  const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, sellerId: null, loading: false });
   const navigate = useNavigate();
-  const { user } = useAuth();
-
-  useEffect(() => {
-    fetchSellers();
-  }, []);
-
-  useEffect(() => {
-    filterAndSortSellers();
-  }, [sellers, searchTerm, sortBy, filterStatus]);
 
   const fetchSellers = async () => {
     try {
       setLoading(true);
-      console.log('Fetching sellers with user:', user);
-      const response = await api.get('/admin/sellers');
-      console.log('Sellers fetched:', response.data);
-      setSellers(response.data);
+      const { data } = await api.get('/admin/sellers');
+      setSellers(data);
     } catch (error) {
-      console.error('Error fetching sellers:', error.response?.data || error.message);
-      alert('Failed to load sellers: ' + (error.response?.data?.message || error.message));
+      toast.error('Failed to load sellers');
     } finally {
       setLoading(false);
     }
   };
 
-  const filterAndSortSellers = () => {
-    let filtered = [...sellers];
+  useEffect(() => {
+    fetchSellers();
+  }, []);
 
-    // Filter by status
+  const filteredAndSortedSellers = useMemo(() => {
+    let filtered = sellers;
+
     if (filterStatus !== 'all') {
       filtered = filtered.filter(s => s.storeStatus === filterStatus);
     }
 
-    // Filter by search term
     if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter(s =>
-        (s.businessName || s.name)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.email?.toLowerCase().includes(searchTerm.toLowerCase())
+        (s.businessName || '').toLowerCase().includes(term) ||
+        (s.name || '').toLowerCase().includes(term) ||
+        (s.email || '').toLowerCase().includes(term)
       );
     }
 
-    // Sort
     filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          const nameA = (a.businessName || a.name || '').toLowerCase();
-          const nameB = (b.businessName || b.name || '').toLowerCase();
-          return nameA.localeCompare(nameB);
-        case 'revenue':
-          return (b.totalRevenue || 0) - (a.totalRevenue || 0);
-        case 'orders':
-          return (b.orderCount || 0) - (a.orderCount || 0);
-        case 'products':
-          return (b.productCount || 0) - (a.productCount || 0);
-        case 'date':
-          return new Date(b.createdAt) - new Date(a.createdAt);
-        default:
-          return 0;
-      }
+      if (sortBy === 'name') return (a.businessName || a.name || '').localeCompare(b.businessName || b.name || '');
+      if (sortBy === 'revenue') return (b.totalRevenue || 0) - (a.totalRevenue || 0);
+      if (sortBy === 'orders') return (b.orderCount || 0) - (a.orderCount || 0);
+      if (sortBy === 'products') return (b.productCount || 0) - (a.productCount || 0);
+      return new Date(b.createdAt) - new Date(a.createdAt); // date
     });
 
-    setFilteredSellers(filtered);
-  };
+    return filtered;
+  }, [sellers, searchTerm, filterStatus, sortBy]);
 
-  const handleDeleteSeller = async (sellerId) => {
-    if (window.confirm('Are you sure you want to delete this seller and all their products/orders?')) {
-      try {
-        await api.delete(`/admin/sellers/${sellerId}`);
-        alert('Seller deleted successfully');
-        fetchSellers();
-      } catch (error) {
-        console.error('Error deleting seller:', error);
-        alert('Failed to delete seller: ' + (error.response?.data?.message || error.message));
-      }
+  const handleDelete = async () => {
+    setDeleteDialog(prev => ({ ...prev, loading: true }));
+    try {
+      await api.delete(`/admin/sellers/${deleteDialog.sellerId}`);
+      toast.success('Seller deleted successfully');
+      setSellers(prev => prev.filter(s => s._id !== deleteDialog.sellerId));
+    } catch (error) {
+      toast.error('Failed to delete seller');
+    } finally {
+      setDeleteDialog({ isOpen: false, sellerId: null, loading: false });
     }
   };
 
-  const handleViewDetails = (sellerId) => {
-    navigate(`/admin/sellers/${sellerId}`);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 p-8">
-        <div className="text-center">Loading sellers...</div>
-      </div>
-    );
-  }
+  const columns = [
+    {
+      key: 'businessName',
+      label: 'Store',
+      render: (_, seller) => (
+        <div className="flex items-center gap-3">
+          <Avatar src={seller.storeLogo} name={seller.businessName || seller.name} size="md" />
+          <div>
+            <div className="font-semibold text-slate-900">{seller.businessName || seller.name || 'N/A'}</div>
+            <div className="text-xs text-slate-500">{seller.name}</div>
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'productCount',
+      label: 'Products',
+      render: (val) => <span className="font-medium text-slate-700">{val || 0}</span>
+    },
+    {
+      key: 'orderCount',
+      label: 'Orders',
+      render: (val) => <span className="font-medium text-slate-700">{val || 0}</span>
+    },
+    {
+      key: 'totalRevenue',
+      label: 'Revenue',
+      render: (val) => <span className="font-bold text-slate-900">₹{(val || 0).toLocaleString('en-IN')}</span>
+    },
+    {
+      key: 'storeStatus',
+      label: 'Status',
+      render: (val) => (
+        <Badge variant={val === 'active' ? 'success' : 'danger'} dot>
+          {val === 'active' ? 'Active' : 'Inactive'}
+        </Badge>
+      )
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (_, seller) => (
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/sellers/${seller._id}`)} icon={<FaEye />} title="View Details" />
+          <Button variant="ghost" size="sm" onClick={() => setDeleteDialog({ isOpen: true, sellerId: seller._id, loading: false })} icon={<FaTrash className="text-red-500"/>} title="Delete Seller" />
+        </div>
+      )
+    }
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-100 p-2 md:p-4 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-4 md:mb-8">
-          <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900 mb-1 md:mb-2">
-            Manage Sellers
-          </h1>
-          <p className="text-gray-600 text-xs md:text-sm">
-            View, manage, and monitor all sellers on the platform
-          </p>
-        </div>
-
-        {/* Filters and Search */}
-        <div className="bg-white rounded-lg shadow-md p-3 md:p-6 mb-4 md:mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4">
-            {/* Search */}
-            <div className="relative">
-              <FaSearch className="absolute left-3 top-2 md:top-3 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search sellers..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 md:pl-10 pr-4 py-1 md:py-2 border border-gray-300 rounded-lg text-xs md:text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Status Filter */}
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 md:px-4 py-1 md:py-2 border border-gray-300 rounded-lg text-xs md:text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-
-            {/* Sort */}
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 md:px-4 py-1 md:py-2 border border-gray-300 rounded-lg text-xs md:text-base focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            >
-              <option value="name">Sort by Name</option>
-              <option value="revenue">Sort by Revenue</option>
-              <option value="orders">Sort by Orders</option>
-              <option value="products">Sort by Products</option>
-              <option value="date">Sort by Date</option>
-            </select>
-
-            {/* Stats */}
-            <div className="bg-indigo-50 p-2 md:p-3 rounded-lg">
-              <p className="text-xs md:text-sm text-indigo-600 font-semibold">
-                {filteredSellers.length} of {sellers.length} sellers
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Sellers Table/Cards */}
-        {filteredSellers.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-md p-8 md:p-12 text-center">
-            <p className="text-gray-600 text-sm md:text-lg">No sellers found</p>
-          </div>
-        ) : (
-          <>
-            {/* Desktop Table View */}
-            <div className="hidden lg:block bg-white rounded-lg shadow-md overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-100 border-b-2 border-gray-300">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-bold text-gray-700">Shop Name</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-700">Owner</th>
-                    <th className="px-4 py-3 text-left font-bold text-gray-700">Email</th>
-                    <th className="px-4 py-3 text-center font-bold text-gray-700">Products</th>
-                    <th className="px-4 py-3 text-center font-bold text-gray-700">Orders</th>
-                    <th className="px-4 py-3 text-right font-bold text-gray-700">Revenue</th>
-                    <th className="px-4 py-3 text-center font-bold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-center font-bold text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredSellers.map((seller, index) => (
-                    <tr key={seller._id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-200 hover:bg-indigo-50 transition`}>
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-gray-900">{seller.businessName || seller.name || 'N/A'}</div>
-                        <div className="text-xs text-gray-500">{seller.businessType || 'N/A'}</div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{seller.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{seller.email}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded-full">
-                          {seller.productCount || 0}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="inline-block bg-green-100 text-green-800 text-xs font-semibold px-2 py-1 rounded-full">
-                          {seller.orderCount || 0}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900 text-sm">
-                        ₹{(seller.totalRevenue || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
-                          seller.storeStatus === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {seller.storeStatus === 'active' ? (
-                            <><FaCheck size={10} /> Active</>
-                          ) : (
-                            <><FaTimes size={10} /> Inactive</>
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex justify-center gap-2">
-                          <button
-                            onClick={() => handleViewDetails(seller._id)}
-                            className="text-indigo-600 hover:text-indigo-900 font-semibold text-sm"
-                            title="View Details"
-                          >
-                            <FaEye />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSeller(seller._id)}
-                            className="text-red-600 hover:text-red-900 font-semibold text-sm"
-                            title="Delete Seller"
-                          >
-                            <FaTrash />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile/Tablet Card View */}
-            <div className="lg:hidden space-y-3">
-              {filteredSellers.map(seller => (
-                <div key={seller._id} className="bg-white rounded-lg shadow-md p-3 border border-gray-200 hover:shadow-lg transition">
-                  {/* Header */}
-                  <div className="mb-3 pb-3 border-b border-gray-200">
-                    <h3 className="font-bold text-gray-900 text-sm md:text-base">{seller.businessName || seller.name || 'N/A'}</h3>
-                    <p className="text-xs text-gray-500">{seller.businessType || 'Not specified'}</p>
-                  </div>
-
-                  {/* Details Grid */}
-                  <div className="grid grid-cols-2 gap-2 md:gap-3 mb-3">
-                    <div className="text-xs md:text-sm">
-                      <p className="text-gray-500 font-semibold">Owner</p>
-                      <p className="text-gray-900">{seller.name}</p>
-                    </div>
-                    <div className="text-xs md:text-sm">
-                      <p className="text-gray-500 font-semibold">Email</p>
-                      <p className="text-gray-900 truncate">{seller.email}</p>
-                    </div>
-                    <div className="text-xs md:text-sm">
-                      <p className="text-gray-500 font-semibold">Products</p>
-                      <p className="text-blue-600 font-bold">{seller.productCount || 0}</p>
-                    </div>
-                    <div className="text-xs md:text-sm">
-                      <p className="text-gray-500 font-semibold">Orders</p>
-                      <p className="text-green-600 font-bold">{seller.orderCount || 0}</p>
-                    </div>
-                    <div className="text-xs md:text-sm">
-                      <p className="text-gray-500 font-semibold">Revenue</p>
-                      <p className="text-purple-600 font-bold">
-                        ₹{(seller.totalRevenue || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                      </p>
-                    </div>
-                    <div className="text-xs md:text-sm">
-                      <p className="text-gray-500 font-semibold">Joined</p>
-                      <p className="text-gray-900">{new Date(seller.createdAt).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-
-                  {/* Status and Actions */}
-                  <div className="flex justify-between items-center border-t border-gray-200 pt-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${
-                      seller.storeStatus === 'active'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {seller.storeStatus === 'active' ? (
-                        <><FaCheck size={10} /> Active</>
-                      ) : (
-                        <><FaTimes size={10} /> Inactive</>
-                      )}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleViewDetails(seller._id)}
-                        className="text-indigo-600 hover:text-indigo-900 font-semibold p-1 md:p-2 hover:bg-indigo-50 rounded"
-                        title="View Details"
-                      >
-                        <FaEye size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteSeller(seller._id)}
-                        className="text-red-600 hover:text-red-900 font-semibold p-1 md:p-2 hover:bg-red-50 rounded"
-                        title="Delete Seller"
-                      >
-                        <FaTrash size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Summary Stats */}
-        {filteredSellers.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mt-6 md:mt-8">
-            <div className="bg-white rounded-lg shadow-md p-3 md:p-6">
-              <p className="text-gray-600 text-xs md:text-sm mb-2 font-semibold">Total Sellers</p>
-              <p className="text-2xl md:text-3xl font-bold text-indigo-600">{filteredSellers.length}</p>
-            </div>
-            <div className="bg-white rounded-lg shadow-md p-3 md:p-6">
-              <p className="text-gray-600 text-xs md:text-sm mb-2 font-semibold">Total Products</p>
-              <p className="text-2xl md:text-3xl font-bold text-blue-600">
-                {filteredSellers.reduce((sum, s) => sum + (s.productCount || 0), 0)}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-md p-3 md:p-6">
-              <p className="text-gray-600 text-xs md:text-sm mb-2 font-semibold">Total Orders</p>
-              <p className="text-2xl md:text-3xl font-bold text-green-600">
-                {filteredSellers.reduce((sum, s) => sum + (s.orderCount || 0), 0)}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-md p-3 md:p-6">
-              <p className="text-gray-600 text-xs md:text-sm mb-2 font-semibold">Total Revenue</p>
-              <p className="text-2xl md:text-3xl font-bold text-purple-600">
-                ₹{filteredSellers.reduce((sum, s) => sum + (s.totalRevenue || 0), 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </p>
-            </div>
-          </div>
-        )}
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Manage Sellers</h1>
+        <p className="text-slate-500 mt-1">View, manage, and monitor all sellers on the platform</p>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <StatCard title="Total Sellers" value={filteredAndSortedSellers.length} color="primary" />
+        <StatCard title="Total Products" value={filteredAndSortedSellers.reduce((a, b) => a + (b.productCount || 0), 0)} color="info" />
+        <StatCard title="Total Revenue" value={`₹${filteredAndSortedSellers.reduce((a, b) => a + (b.totalRevenue || 0), 0).toLocaleString('en-IN')}`} color="purple" />
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="w-full md:w-1/3">
+          <SearchBar value={searchTerm} onChange={setSearchTerm} placeholder="Search sellers..." />
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none"
+          >
+            <option value="name">Sort by Name</option>
+            <option value="revenue">Sort by Revenue</option>
+            <option value="orders">Sort by Orders</option>
+            <option value="products">Sort by Products</option>
+            <option value="date">Sort by Date</option>
+          </select>
+        </div>
+      </div>
+
+      <DataTable 
+        columns={columns} 
+        data={filteredAndSortedSellers} 
+        loading={loading} 
+        pagination 
+        pageSize={10} 
+        emptyMessage="No sellers found."
+      />
+
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        onClose={() => setDeleteDialog({ isOpen: false, sellerId: null, loading: false })}
+        onConfirm={handleDelete}
+        loading={deleteDialog.loading}
+        title="Delete Seller"
+        message="Are you sure you want to delete this seller and all their products/orders? This action cannot be undone."
+        variant="danger"
+        confirmLabel="Delete"
+      />
     </div>
   );
 }

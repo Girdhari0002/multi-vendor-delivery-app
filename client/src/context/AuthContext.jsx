@@ -18,6 +18,19 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
+  // Keep this tab's auth state in sync when another tab logs in/out or switches accounts —
+  // otherwise this tab keeps showing the old user while API calls (which read localStorage
+  // fresh on every request) silently start using the other tab's token.
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'userInfo') {
+        setUser(e.newValue ? JSON.parse(e.newValue) : null);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const login = async (email, password) => {
     try {
       const { data } = await api.post('/auth/login', { email, password });

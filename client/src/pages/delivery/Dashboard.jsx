@@ -1,12 +1,32 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
-import Spinner from '../../components/Spinner';
+import { 
+  FaTruck, 
+  FaCheckCircle, 
+  FaMapMarkerAlt, 
+  FaLocationArrow, 
+  FaPhoneAlt, 
+  FaDirections, 
+  FaCheck
+} from 'react-icons/fa';
+
+import Card from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
+import Badge from '../../components/ui/Badge';
+import StatCard from '../../components/ui/StatCard';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import EmptyState from '../../components/ui/EmptyState';
+import { SkeletonCard } from '../../components/ui/Skeleton';
 
 const DeliveryDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
+  const [online, setOnline] = useState(true);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, orderId: null });
+  const [completedToday, setCompletedToday] = useState(0);
+  
   const watchIdRef = useRef(null);
   const ordersRef = useRef([]);
 
@@ -65,51 +85,179 @@ const DeliveryDashboard = () => {
     setSharing(false);
   };
 
-  const markDelivered = async (orderId) => {
+  const handleConfirmDeliver = async () => {
+    const orderId = confirmDialog.orderId;
+    if (!orderId) return;
+    
     try {
       await api.put(`/delivery/orders/${orderId}/deliver`);
       toast.success('Order marked as delivered');
       setOrders((prev) => prev.filter((o) => o._id !== orderId));
+      setCompletedToday(prev => prev + 1);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update order');
+    } finally {
+      setConfirmDialog({ isOpen: false, orderId: null });
     }
   };
 
-  if (loading) return <Spinner />;
-
   return (
-    <div className="bg-white shadow rounded-lg p-6">
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
-        <h2 className="text-2xl font-bold">My Deliveries</h2>
-        <button
-          onClick={sharing ? stopSharing : startSharing}
-          className={`px-4 py-2 rounded-md font-semibold text-white ${sharing ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
-        >
-          {sharing ? 'Stop Sharing Location' : 'Start Sharing Location'}
-        </button>
+    <div className="max-w-3xl mx-auto pb-20">
+      {/* Header section with status toggle */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-slate-500">Delivery Agent Portal</p>
+        </div>
+        <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100">
+          <span className={`text-sm font-semibold ${online ? 'text-emerald-600' : 'text-slate-500'}`}>
+            {online ? 'Online' : 'Offline'}
+          </span>
+          <button 
+            onClick={() => setOnline(!online)}
+            className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${online ? 'bg-emerald-500' : 'bg-slate-300'}`}
+          >
+            <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${online ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+        </div>
       </div>
 
-      {orders.length === 0 ? (
-        <p className="text-gray-500">No orders assigned to you right now.</p>
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <StatCard
+          title="Active"
+          value={orders.length}
+          icon={FaTruck}
+          color="warning"
+        />
+        <StatCard
+          title="Completed"
+          value={completedToday}
+          icon={FaCheckCircle}
+          color="success"
+        />
+        <StatCard
+          title="Location"
+          value={sharing ? "ON" : "OFF"}
+          icon={FaMapMarkerAlt}
+          color={sharing ? "success" : "neutral"}
+          className="col-span-2 sm:col-span-1"
+        />
+      </div>
+
+      {/* Location Sharing Card */}
+      <Card className="mb-8" padding="md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+              Location Sharing
+              {sharing && (
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-slate-500 mt-1">
+              {sharing ? 'Live location sharing is active. Customers can track you.' : 'Start sharing your location to help customers track their orders.'}
+            </p>
+          </div>
+          <Button
+            variant={sharing ? 'danger' : 'success'}
+            icon={sharing ? null : <FaLocationArrow />}
+            onClick={sharing ? stopSharing : startSharing}
+            fullWidth={false}
+            className="sm:w-auto w-full"
+          >
+            {sharing ? 'Stop Sharing Location' : 'Start Sharing Location'}
+          </Button>
+        </div>
+      </Card>
+
+      {/* Assigned Orders Section */}
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-bold text-slate-900">My Deliveries</h2>
+        <Badge variant="primary" dot>{orders.length}</Badge>
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col gap-4">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      ) : orders.length === 0 ? (
+        <EmptyState
+          icon={FaTruck}
+          title="No deliveries assigned"
+          description="You have no active deliveries assigned to you right now. Take a break!"
+        />
       ) : (
-        <div className="space-y-4">
-          {orders.map((order) => (
-            <div key={order._id} className="border rounded-lg p-4 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
-              <div>
-                <p className="text-sm text-gray-400">Order #{order._id.slice(-6)}</p>
-                <p className="font-semibold">{order.customer?.name} • {order.customer?.phone}</p>
-                <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
+        <div className="flex flex-col gap-4">
+          {orders.map(order => (
+            <Card key={order._id} className="flex flex-col gap-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-500">#{order._id.slice(-6)}</span>
+                  <Badge variant="warning">{order.status || 'Assigned'}</Badge>
+                </div>
               </div>
-              <button
-                onClick={() => markDelivered(order._id)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold whitespace-nowrap"
-              >
-                Mark Delivered
-              </button>
-            </div>
+              
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 bg-blue-50 text-blue-500 rounded-full shrink-0">
+                    <FaPhoneAlt size={14} />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800">{order.customer?.name}</p>
+                    <a href={`tel:${order.customer?.phone}`} className="text-blue-600 font-medium hover:underline inline-block mt-0.5">
+                      {order.customer?.phone}
+                    </a>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 p-2 bg-orange-50 text-orange-500 rounded-full shrink-0">
+                    <FaMapMarkerAlt size={14} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-500">Delivery Address</p>
+                    <p className="text-slate-800 mt-0.5 leading-snug">{order.deliveryAddress}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 mt-2 pt-4 border-t border-slate-100">
+                <Button
+                  variant="outline"
+                  className="flex-1 !text-emerald-600 !border-emerald-200 hover:!bg-emerald-50 hover:!border-emerald-300"
+                  icon={<FaDirections />}
+                  onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.deliveryAddress)}`, '_blank')}
+                >
+                  Navigate
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  icon={<FaCheck />}
+                  onClick={() => setConfirmDialog({ isOpen: true, orderId: order._id })}
+                >
+                  Mark Delivered
+                </Button>
+              </div>
+            </Card>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, orderId: null })}
+        onConfirm={handleConfirmDeliver}
+        title="Confirm Delivery"
+        message="Are you sure you want to mark this order as delivered? This action cannot be undone."
+        confirmLabel="Yes, Mark Delivered"
+        variant="warning"
+      />
     </div>
   );
 };

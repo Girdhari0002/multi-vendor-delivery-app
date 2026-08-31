@@ -5,6 +5,7 @@ import Product from '../models/Product.js';
 import Settings from '../models/Settings.js';
 import { resolveCoupon } from '../services/coupon.js';
 import { sendEmail } from '../services/mailer.js';
+import { createDeliveryOrder } from '../services/borzo.js';
 import logger from '../config/logger.js';
 
 // POST /api/orders
@@ -36,13 +37,21 @@ export const placeOrder = async (req, res) => {
     }
 
     // Ensure items have required fields
-    const processedItems = items.map(item => ({
-      productId: item.productId || item.id,
-      quantity: item.quantity || 1,
-      price: item.price || 0,
-      productName: item.productName || item.title || 'Product',
-      productImage: item.productImage || item.image || ''
-    }));
+    const itemProductIds = items.map(item => item.productId || item.id).filter(Boolean);
+    const itemProducts = await Product.find({ _id: { $in: itemProductIds } }).select('sellerId');
+    const sellerIdByProduct = new Map(itemProducts.map(p => [p._id.toString(), p.sellerId]));
+
+    const processedItems = items.map(item => {
+      const productId = item.productId || item.id;
+      return {
+        productId,
+        sellerId: sellerIdByProduct.get(String(productId)),
+        quantity: item.quantity || 1,
+        price: item.price || 0,
+        productName: item.productName || item.title || 'Product',
+        productImage: item.productImage || item.image || ''
+      };
+    });
 
     // Calculate totals — charges always come from admin-configured settings, never trusted from the client
     const subtotal = processedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -144,9 +153,12 @@ export const getSellerOrders = async (req, res) => {
     }).populate('items.productId', 'title price sellerId image').populate('userId', 'name email');
 
     const sellerOrders = orders.filter(order => {
-      return order.items.some(item => 
-        item.productId && item.productId.sellerId.toString() === req.user._id.toString()
-      );
+      return order.items.some(item => {
+        // Prefer the sellerId snapshotted on the item; fall back to the populated product for
+        // orders placed before that snapshot existed (only works if the product still exists).
+        const itemSellerId = item.sellerId?.toString() || item.productId?.sellerId?.toString();
+        return itemSellerId === req.user._id.toString();
+      });
     });
 
     res.json(sellerOrders);
@@ -230,7 +242,7 @@ export const getOrderInvoice = async (req, res) => {
 export const updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id).populate('items.productId', 'sellerId');
 
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
@@ -247,11 +259,47 @@ export const updateOrderStatus = async (req, res) => {
     if (!order.subtotal) order.subtotal = 0;
     if (!order.paymentStatus) order.paymentStatus = 'pending';
 
+    const wasPlaced = order.orderStatus === 'placed';
     order.orderStatus = status;
     if (status === 'shipped') {
       order.shippedAt = new Date();
     } else if (status === 'delivered') {
       order.deliveredAt = new Date();
+    }
+
+    // Book a courier pickup with Borzo the moment an order first goes out for shipping —
+    // optional: only runs if BORZO_API_TOKEN is configured, and never blocks the status
+    // update itself (seller can still mark shipped and retry booking later).
+    let borzoWarning = null;
+    if (status === 'shipped' && wasPlaced && process.env.BORZO_API_TOKEN) {
+      try {
+        const sellerId = order.items[0]?.sellerId || order.items[0]?.productId?.sellerId;
+        const seller = sellerId ? await User.findById(sellerId) : null;
+
+        if (!seller?.storeAddress?.street) {
+          borzoWarning = 'Courier not booked: seller has not set a pickup address in their store profile.';
+        } else if (!seller?.phone || !order.customer?.phone) {
+          borzoWarning = 'Courier not booked: seller or customer phone number is missing.';
+        } else {
+          const pickupAddress = [seller.storeAddress.street, seller.storeAddress.city, seller.storeAddress.state, seller.storeAddress.zip]
+            .filter(Boolean).join(', ');
+          const orderRef = order._id.toString().slice(-6);
+          const booking = await createDeliveryOrder({
+            orderId: orderRef,
+            matter: `Order #${orderRef}`,
+            pickupAddress,
+            pickupName: seller.businessName || seller.name,
+            pickupPhone: seller.phone,
+            dropAddress: order.deliveryAddress,
+            dropName: order.customer.name,
+            dropPhone: order.customer.phone,
+          });
+          order.borzo = { orderId: booking.order?.order_id?.toString(), status: booking.order?.status };
+        }
+      } catch (borzoError) {
+        logger.error(`Borzo booking failed for order ${order._id}: ${borzoError.message}`);
+        borzoWarning = `Courier booking failed: ${borzoError.message}`;
+      }
     }
 
     const updatedOrder = await order.save();
@@ -274,10 +322,55 @@ export const updateOrderStatus = async (req, res) => {
       }).catch(() => {});
     }
 
-    res.json(updatedOrder);
+    res.json(borzoWarning ? { ...updatedOrder.toObject(), borzoWarning } : updatedOrder);
   } catch (error) {
     logger.error(error);
     res.status(500).json({ message: error.message || 'Failed to update order status' });
+  }
+};
+
+// PUT /api/orders/:id/cancel (Customer, own order — only while still 'placed')
+export const cancelOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+    if (order.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+    if (order.orderStatus !== 'placed') {
+      return res.status(400).json({ message: `Cannot cancel an order that is already ${order.orderStatus}` });
+    }
+    // Online payments need a refund, which this endpoint doesn't issue — keep those out of
+    // self-serve cancellation rather than take the customer's money with no way back.
+    if (order.paymentMethod === 'razorpay' && order.paymentStatus === 'completed') {
+      return res.status(400).json({ message: 'This order was paid online — please contact support for a refund' });
+    }
+
+    order.orderStatus = 'cancelled';
+    await order.save();
+
+    if (req.io) {
+      req.io.to(order.userId.toString()).emit('orderStatusUpdated', {
+        orderId: order._id.toString(),
+        status: 'cancelled',
+        orderNumber: order._id,
+      });
+    }
+
+    if (order.customer?.email) {
+      sendEmail({
+        to: order.customer.email,
+        subject: `Order #${order._id.toString().slice(-6)} cancelled`,
+        html: `<p>Hi ${order.customer.name || ''},</p><p>Your order #${order._id.toString().slice(-6)} has been cancelled as requested.</p>`,
+      }).catch(() => {});
+    }
+
+    res.json(order);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).json({ message: error.message || 'Failed to cancel order' });
   }
 };
 
@@ -297,6 +390,15 @@ export const assignDeliveryAgent = async (req, res) => {
     }
 
     order.deliveryAgentId = agent._id;
+
+    // Assigning an agent is the dispatch step — the agent's own dashboard only lists orders
+    // with orderStatus 'shipped', so without this an assigned order would never show up there.
+    const justShipped = order.orderStatus === 'placed';
+    if (justShipped) {
+      order.orderStatus = 'shipped';
+      order.shippedAt = new Date();
+    }
+
     const updatedOrder = await order.save();
 
     if (req.io) {
@@ -304,6 +406,21 @@ export const assignDeliveryAgent = async (req, res) => {
         orderId: order._id.toString(),
         agentName: agent.name,
       });
+      if (justShipped) {
+        req.io.to(order.userId.toString()).emit('orderStatusUpdated', {
+          orderId: order._id.toString(),
+          status: 'shipped',
+          orderNumber: order._id,
+        });
+      }
+    }
+
+    if (justShipped && order.customer?.email) {
+      sendEmail({
+        to: order.customer.email,
+        subject: `Order #${order._id.toString().slice(-6)} is now shipped`,
+        html: `<p>Hi ${order.customer.name || ''},</p><p>Your order #${order._id.toString().slice(-6)} status has been updated to <strong>shipped</strong>.</p>`,
+      }).catch(() => {});
     }
 
     res.json(updatedOrder);

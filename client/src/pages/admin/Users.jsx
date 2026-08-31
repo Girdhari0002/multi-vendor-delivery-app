@@ -1,17 +1,27 @@
 import { useState, useEffect, useMemo } from 'react';
-import { FaSearch, FaTrash } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
-import Spinner from '../../components/Spinner';
+import { FaTrash, FaLock, FaUnlock, FaEye } from 'react-icons/fa';
+import Tabs from '../../components/ui/Tabs';
+import SearchBar from '../../components/ui/SearchBar';
+import DataTable from '../../components/ui/DataTable';
+import Badge from '../../components/ui/Badge';
+import Button from '../../components/ui/Button';
+import Avatar from '../../components/ui/Avatar';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState('all');
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, type: null, user: null, loading: false });
+  const navigate = useNavigate();
 
   const fetchUsers = async () => {
     try {
+      setLoading(true);
       const { data } = await api.get('/admin/users');
       setUsers(data);
     } catch (error) {
@@ -25,9 +35,17 @@ const Users = () => {
     fetchUsers();
   }, []);
 
+  const tabs = [
+    { key: 'all', label: 'All Users', count: users.length },
+    { key: 'customer', label: 'Customers', count: users.filter(u => u.role === 'customer').length },
+    { key: 'seller', label: 'Sellers', count: users.filter(u => u.role === 'seller').length },
+    { key: 'delivery', label: 'Delivery Agents', count: users.filter(u => u.role === 'delivery').length },
+    { key: 'admin', label: 'Admins', count: users.filter(u => u.role === 'admin').length },
+  ];
+
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+      const matchesRole = activeTab === 'all' || u.role === activeTab;
       const term = searchTerm.trim().toLowerCase();
       const matchesSearch =
         !term ||
@@ -35,111 +53,143 @@ const Users = () => {
         u.email?.toLowerCase().includes(term);
       return matchesRole && matchesSearch;
     });
-  }, [users, searchTerm, roleFilter]);
+  }, [users, searchTerm, activeTab]);
 
-  const toggleBlock = async (id) => {
+  const handleAction = async () => {
+    const { type, user } = confirmDialog;
+    setConfirmDialog(prev => ({ ...prev, loading: true }));
     try {
-      await api.put(`/admin/block-user/${id}`);
-      fetchUsers();
-      toast.success('User status updated');
+      if (type === 'block') {
+        await api.put(`/admin/block-user/${user._id}`);
+        toast.success(`User ${user.isBlocked ? 'unblocked' : 'blocked'}`);
+        fetchUsers();
+      } else if (type === 'delete') {
+        await api.delete(`/admin/users/${user._id}`);
+        toast.success('User deleted');
+        setUsers(prev => prev.filter(x => x._id !== user._id));
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Action failed');
+    } finally {
+      setConfirmDialog({ isOpen: false, type: null, user: null, loading: false });
     }
   };
 
-  const deleteUser = async (u) => {
-    if (!window.confirm(`Delete ${u.name} (${u.email})? This cannot be undone.`)) return;
-    try {
-      await api.delete(`/admin/users/${u._id}`);
-      toast.success('User deleted');
-      setUsers((prev) => prev.filter((x) => x._id !== u._id));
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to delete user');
-    }
+  const handleViewDetails = (user) => {
+    if (user.role === 'customer') navigate(`/admin/customers/${user._id}`);
+    else if (user.role === 'seller') navigate(`/admin/sellers/${user._id}`);
+    else toast.info(`View details for ${user.role} is not available yet`);
   };
 
-  if (loading) return <Spinner />;
+  const columns = [
+    {
+      key: 'name',
+      label: 'User',
+      sortable: true,
+      render: (_, user) => (
+        <div className="flex items-center gap-3">
+          <Avatar src={user.profilePicture} name={user.name} size="sm" />
+          <span className="font-medium text-slate-800">{user.name}</span>
+        </div>
+      )
+    },
+    { key: 'email', label: 'Email', sortable: true },
+    {
+      key: 'role',
+      label: 'Role',
+      sortable: true,
+      render: (val) => {
+        const variants = { admin: 'primary', seller: 'info', delivery: 'warning', customer: 'neutral' };
+        return <Badge variant={variants[val] || 'neutral'} className="uppercase">{val}</Badge>;
+      }
+    },
+    {
+      key: 'isBlocked',
+      label: 'Status',
+      sortable: true,
+      render: (isBlocked) => (
+        <Badge variant={isBlocked ? 'danger' : 'success'} dot>
+          {isBlocked ? 'Blocked' : 'Active'}
+        </Badge>
+      )
+    },
+    {
+      key: 'createdAt',
+      label: 'Joined',
+      sortable: true,
+      render: (val) => new Date(val).toLocaleDateString()
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (_, user) => (
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => handleViewDetails(user)} icon={<FaEye />} title="View Details" />
+          {user.role !== 'admin' && (
+            <>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setConfirmDialog({ isOpen: true, type: 'block', user, loading: false })} 
+                icon={user.isBlocked ? <FaUnlock className="text-green-500"/> : <FaLock className="text-orange-500"/>} 
+                title={user.isBlocked ? 'Unblock' : 'Block'} 
+              />
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setConfirmDialog({ isOpen: true, type: 'delete', user, loading: false })} 
+                icon={<FaTrash className="text-red-500"/>} 
+                title="Delete" 
+              />
+            </>
+          )}
+        </div>
+      )
+    }
+  ];
 
   return (
-    <div className="bg-white shadow rounded-lg p-6">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h2 className="text-2xl font-bold">Manage Users</h2>
-        <span className="text-sm text-gray-500 font-medium">
-          {filteredUsers.length} of {users.length} users
-        </span>
-      </div>
-
-      {/* Search + Filter */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1">
-          <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name or email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent"
-          />
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Enhanced User Management</h2>
+          <p className="text-slate-500 text-sm mt-1">Manage customers, sellers, and agents</p>
         </div>
-        <select
-          value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent"
-        >
-          <option value="all">All Roles</option>
-          <option value="customer">Customer</option>
-          <option value="seller">Seller</option>
-          <option value="delivery">Delivery Agent</option>
-          <option value="admin">Admin</option>
-        </select>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Email</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Role</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredUsers.map(u => (
-              <tr key={u._id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{u.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{u.email}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-1 uppercase font-semibold">
-                  <span className={u.role === 'admin' ? 'text-purple-600' : u.role === 'seller' ? 'text-blue-600' : u.role === 'delivery' ? 'text-teal-600' : 'text-gray-500'}>{u.role}</span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.isBlocked ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                    {u.isBlocked ? 'Blocked' : 'Active'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
-                  {u.role !== 'admin' && (
-                    <>
-                      <button onClick={() => toggleBlock(u._id)} className={`${u.isBlocked ? 'text-green-600 hover:text-green-900' : 'text-red-600 hover:text-red-900'}`}>
-                        {u.isBlocked ? 'Unblock' : 'Block'}
-                      </button>
-                      <button onClick={() => deleteUser(u)} className="text-red-600 hover:text-red-900 inline-flex items-center gap-1" title="Delete user">
-                        <FaTrash size={12} /> Delete
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {filteredUsers.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">No users match your search.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-1 mb-6 overflow-hidden">
+        <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} variant="pills" className="p-3" />
       </div>
+
+      <div className="mb-6 max-w-md">
+        <SearchBar 
+          value={searchTerm} 
+          onChange={setSearchTerm} 
+          placeholder="Search by name or email..." 
+        />
+      </div>
+
+      <DataTable 
+        columns={columns} 
+        data={filteredUsers} 
+        loading={loading} 
+        pagination 
+        pageSize={10} 
+        emptyMessage="No users found matching your criteria."
+      />
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, type: null, user: null, loading: false })}
+        onConfirm={handleAction}
+        loading={confirmDialog.loading}
+        title={confirmDialog.type === 'delete' ? 'Delete User' : confirmDialog.user?.isBlocked ? 'Unblock User' : 'Block User'}
+        message={confirmDialog.type === 'delete' 
+          ? `Are you sure you want to delete ${confirmDialog.user?.name}? This action cannot be undone.` 
+          : `Are you sure you want to ${confirmDialog.user?.isBlocked ? 'unblock' : 'block'} ${confirmDialog.user?.name}?`}
+        variant={confirmDialog.type === 'delete' ? 'danger' : 'warning'}
+        confirmLabel={confirmDialog.type === 'delete' ? 'Delete' : 'Confirm'}
+      />
     </div>
   );
 };
