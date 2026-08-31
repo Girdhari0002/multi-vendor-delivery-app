@@ -24,10 +24,13 @@ import couponRoutes from './routes/couponRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 
 dotenv.config();
+
+
+const app = express();
+
 // Render reverse proxy configuration
 app.set('trust proxy', 1);
 
-const app = express();
 const httpServer = createServer(app);
 app.use(cookieParser());
 
