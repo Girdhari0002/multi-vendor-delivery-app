@@ -27,10 +27,6 @@ dotenv.config();
 
 
 const app = express();
-
-// Render reverse proxy configuration
-app.set('trust proxy', 1);
-
 const httpServer = createServer(app);
 app.use(cookieParser());
 
