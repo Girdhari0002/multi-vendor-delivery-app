@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
 
 let transporter = null;
 
@@ -6,9 +7,7 @@ const getTransporter = () => {
   if (transporter) return transporter;
 
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn(
-      'EMAIL_USER / EMAIL_PASS not set — emails will be logged to console instead of sent.'
-    );
+    console.warn('EMAIL_USER / EMAIL_PASS not set');
     return null;
   }
 
@@ -17,9 +16,21 @@ const getTransporter = () => {
     port: 587,
     secure: false,
     requireTLS: true,
+
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
+    },
+
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
+
+    lookup: (hostname, options, callback) => {
+      dns.lookup(hostname, {
+        family: 4,
+        all: false,
+      }, callback);
     },
   });
 
@@ -30,9 +41,7 @@ export const sendEmail = async ({ to, subject, html }) => {
   const t = getTransporter();
 
   if (!t) {
-    console.log(
-      `[mailer:stub] To: ${to} | Subject: ${subject}\n${html}`
-    );
+    console.log(`[mailer:stub] To: ${to} | Subject: ${subject}`);
     return { stubbed: true };
   }
 
