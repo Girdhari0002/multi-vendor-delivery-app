@@ -15,11 +15,10 @@ const setAuthCookie = (res, userId) => {
   res.cookie('token', generateToken(userId), {
     httpOnly: true,
     secure: true,
-    sameSite: 'strict',
+    sameSite: 'none',
     maxAge: 24 * 60 * 60 * 1000,
   });
 };
-
 // Generates a fresh 6-digit OTP on the given user doc, resets the attempt counter, and emails it.
 // Does not save the user — caller is expected to call user.save() (kept this way so registerUser
 // can set the OTP and persist the new user in a single save()).
