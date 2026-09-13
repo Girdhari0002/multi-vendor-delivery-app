@@ -75,13 +75,19 @@ export const registerUser = async (req, res) => {
     // email both pass the findOne check before either has saved. The loser hits the unique
     // index instead of crashing with a raw 500 — the winner already sent the OTP, so this is
     // a normal outcome, not an error.
+    console.error("========== REGISTER ERROR ==========");
+    console.error("Error message:", error.message);
+    console.error("Error name:", error.name);
+    console.error("Error code:", error.code);
+    console.error("Error stack:", error.stack);
+    console.error("===================================");
+
     if (error.code === 11000 && error.keyPattern?.email) {
       return res.status(201).json({
         message: 'Registration successful. Please check your email for a verification code.',
         email: req.body.email,
       });
     }
-     console.log(error);
     res.status(500).json({ message: error.message });
   }
 };
